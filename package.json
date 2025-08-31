@@ -1,0 +1,28 @@
+{
+  "name": "ecommerce-graphic-designer",
+  "version": "1.0.0",
+  "description": "AI-powered E-commerce Image Editor",
+  "scripts": {
+    "dev:backend": "cd backend && pnpm run dev",
+    "dev:frontend": "cd frontend && pnpm run dev", 
+    "dev": "concurrently \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
+    "build": "pnpm run build:backend && pnpm run build:frontend",
+    "build:backend": "cd backend && pnpm run build",
+    "build:frontend": "cd frontend && pnpm run build",
+    "start": "cd backend && pnpm start",
+    "test": "pnpm run test:backend && pnpm run test:frontend",
+    "test:backend": "cd backend && pnpm test",
+    "test:frontend": "cd frontend && pnpm test",
+    "install:all": "pnpm install && cd backend && pnpm install && cd ../frontend && pnpm install"
+  },
+  "keywords": ["ai", "image-processing", "ecommerce", "gemini"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
