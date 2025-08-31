@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { JobModel, VariantModel } from '../models';
-import { ApiResponse, JobStatus } from '../types';
+import { ApiResponse, JobStatus, Variant } from '../types';
 
 const router = Router();
 const jobModel = new JobModel();
@@ -19,7 +19,7 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json(response);
     }
 
-    let variants = [];
+    let variants: Variant[] = [];
     if (job.status === 'done' && job.result_variant_ids.length > 0) {
       variants = await variantModel.findByJobId(job.id);
     }

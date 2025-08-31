@@ -1,9 +1,11 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
-import dotenv from 'dotenv';
 
 import { db } from './services/database';
 import { fileStorage } from './services/fileStorage';
@@ -15,8 +17,6 @@ import sessionRoutes from './routes/session';
 import jobRoutes from './routes/job';
 import imageRoutes from './routes/image';
 import editRoutes from './routes/edit';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;

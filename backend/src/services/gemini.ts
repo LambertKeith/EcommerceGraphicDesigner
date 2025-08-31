@@ -47,8 +47,8 @@ export class GeminiService {
   private apiUrl: string;
   private model: string;
   private maxRetries: number = 3;
-  private retryDelay: number = 1000;
-  private rateLimitDelay: number = 5000;
+  private retryDelay: number = 2000;
+  private rateLimitDelay: number = 10000;
 
   constructor() {
     this.apiKey = process.env.GOOGLE_API_KEY || '';
@@ -230,7 +230,7 @@ export class GeminiService {
         console.log(`Calling Gemini API (attempt ${attempt}/${this.maxRetries})`);
         
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 second timeout for image processing
 
         const response = await fetch(this.apiUrl, {
           method: 'POST',

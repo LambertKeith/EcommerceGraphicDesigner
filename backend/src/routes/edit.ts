@@ -74,36 +74,64 @@ router.post('/', async (req, res, next) => {
 
 async function processImageAsync(jobId: string, imagePath: string, options: any) {
   try {
+    console.log(`Starting image processing for job ${jobId}`);
+    console.log(`Image path: ${imagePath}, Options:`, options);
+    
     await jobModel.updateStatus(jobId, 'running');
     
     const result = await geminiService.processImage(imagePath, options);
     
     if (!result.success) {
+      console.error(`Gemini processing failed for job ${jobId}:`, result.error);
       await jobModel.updateStatus(jobId, 'error', result.error);
       return;
     }
 
+    console.log(`Gemini processing successful for job ${jobId}, generated ${result.variants.length} variants`);
+
     const job = await jobModel.findById(jobId);
-    if (!job) return;
+    if (!job) {
+      console.error(`Job ${jobId} not found after processing`);
+      return;
+    }
+
+    // Get project_id from session
+    const session = await sessionModel.findById(job.session_id);
+    if (!session) {
+      console.error(`Session ${job.session_id} not found for job ${jobId}`);
+      await jobModel.updateStatus(jobId, 'error', 'Session not found');
+      return;
+    }
+
+    console.log(`Using project_id ${session.project_id} for job ${jobId}`);
 
     const variantIds: string[] = [];
     
-    for (const variant of result.variants) {
+    for (let i = 0; i < result.variants.length; i++) {
+      const variant = result.variants[i];
       try {
+        console.log(`Processing variant ${i + 1}/${result.variants.length} for job ${jobId}`);
+        
         const savedImage = await fileStorage.saveResultImage(
           variant.imageBuffer,
           imagePath
         );
         
+        console.log(`Saved result image at: ${savedImage.filePath}`);
+        
+        // Use project_id from session instead of session_id
         const resultImage = await imageModel.create(
-          job.session_id,
+          session.project_id,
           savedImage.filePath,
           savedImage.width,
           savedImage.height,
           variant.metadata
         );
         
+        console.log(`Created result image record with ID: ${resultImage.id}`);
+        
         const thumbnailPath = await fileStorage.generateThumbnail(savedImage.filePath);
+        console.log(`Generated thumbnail at: ${thumbnailPath}`);
         
         const variantRecord = await variantModel.create(
           jobId,
@@ -113,17 +141,22 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
           variant.metadata
         );
         
+        console.log(`Created variant record with ID: ${variantRecord.id}`);
         variantIds.push(variantRecord.id);
       } catch (variantError) {
-        console.error('Error processing variant:', variantError);
+        console.error(`Error processing variant ${i + 1} for job ${jobId}:`, variantError);
       }
     }
+    
+    console.log(`Completed processing ${variantIds.length} variants for job ${jobId}`);
     
     await jobModel.updateVariants(jobId, variantIds);
     await jobModel.updateStatus(jobId, 'done');
     
+    console.log(`Job ${jobId} completed successfully`);
+    
   } catch (error) {
-    console.error('Image processing failed:', error);
+    console.error(`Image processing failed for job ${jobId}:`, error);
     await jobModel.updateStatus(jobId, 'error', error instanceof Error ? error.message : 'Processing failed');
   }
 }

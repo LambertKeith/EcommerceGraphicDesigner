@@ -10,6 +10,12 @@ export const validateFilePath = (filePath: string): boolean => {
 };
 
 export const getFileUrl = (req: any, relativePath: string): string => {
+  // In development, return relative URLs so frontend proxy can handle them
+  if (process.env.NODE_ENV === 'development') {
+    return `/static${relativePath}`;
+  }
+  
+  // In production, return absolute URLs
   const protocol = req.protocol;
   const host = req.get('host');
   return `${protocol}://${host}/static${relativePath}`;

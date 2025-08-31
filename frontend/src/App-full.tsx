@@ -72,7 +72,7 @@ function App() {
                   </div>
                 </div>
                 <h1 className="text-xl font-bold text-white drop-shadow-lg">
-                  AI 图像 <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">工作室</span>
+                  AI Image <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">Studio</span>
                 </h1>
               </motion.div>
 
@@ -83,7 +83,7 @@ function App() {
                 className="flex items-center space-x-2 text-sm text-white/70"
               >
                 <Sparkles className="h-4 w-4" />
-                <span>由 Gemini 2.5 Flash 驱动</span>
+                <span>Powered by Gemini 2.5 Flash</span>
               </motion.div>
             </div>
           </div>
@@ -109,19 +109,21 @@ function App() {
                     className="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight"
                     variants={itemVariants}
                   >
-                    用 AI 魔法
+                    Transform Your
                     <br />
                     <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400">
-                      变换您的产品图像
+                      Product Images
                     </span>
+                    <br />
+                    with AI Magic
                   </motion.h1>
                   
                   <motion.p 
                     variants={itemVariants}
                     className="text-xl text-white/80 mb-8 max-w-3xl mx-auto leading-relaxed"
                   >
-                    专业的电商图像优化，由前沿 AI 技术驱动。
-                    快速去除背景、增强光照，几秒钟内创建惊艳的图像变体。
+                    Professional e-commerce image optimization powered by cutting-edge AI. 
+                    Remove backgrounds, enhance lighting, and create stunning variants in seconds.
                   </motion.p>
 
                   {/* Feature Pills */}
@@ -130,9 +132,9 @@ function App() {
                     className="flex flex-wrap justify-center gap-4 mb-12"
                   >
                     {[
-                      { icon: Zap, text: "闪电般快速" },
-                      { icon: Star, text: "AI 驱动" },
-                      { icon: Sparkles, text: "专业品质" }
+                      { icon: Zap, text: "Lightning Fast" },
+                      { icon: Star, text: "AI-Powered" },
+                      { icon: Sparkles, text: "Professional Quality" }
                     ].map((feature, index) => (
                       <motion.div
                         key={index}
@@ -169,10 +171,10 @@ function App() {
                           <Upload className="h-8 w-8 text-white" />
                         </motion.div>
                         <h2 className="text-2xl font-bold text-white mb-2">
-                          上传您的产品图像
+                          Upload Your Product Image
                         </h2>
                         <p className="text-white/70">
-                          拖拽或点击选择图像，观看 AI 魔法的发生
+                          Drag & drop or click to select your image and watch the AI magic happen
                         </p>
                       </div>
                       <ImageUpload />
@@ -187,9 +189,9 @@ function App() {
                 >
                   <div className="grid md:grid-cols-3 gap-8">
                     {[
-                      { step: "01", title: "上传", desc: "拖拽您的产品图像" },
-                      { step: "02", title: "增强", desc: "AI 自动优化" },
-                      { step: "03", title: "下载", desc: "获得专业效果" }
+                      { step: "01", title: "Upload", desc: "Drop your product image" },
+                      { step: "02", title: "Enhance", desc: "AI optimizes automatically" },
+                      { step: "03", title: "Download", desc: "Get professional results" }
                     ].map((item, index) => (
                       <motion.div
                         key={index}
