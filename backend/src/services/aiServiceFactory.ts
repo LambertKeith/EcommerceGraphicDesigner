@@ -151,27 +151,27 @@ export class AIServiceFactory {
       return userPreference;
     }
 
-    // Task-specific recommendations
+    // Task-specific recommendations based on capability order: gemini > sora > chatgpt
     switch (taskType) {
       case 'optimize':
-        // For optimization, prioritize speed (Gemini)
+        // For optimization, prioritize the best model (Gemini)
         if (this.isModelAvailable('gemini')) return 'gemini';
-        if (this.isModelAvailable('chatgpt')) return 'chatgpt';
         if (this.isModelAvailable('sora')) return 'sora';
+        if (this.isModelAvailable('chatgpt')) return 'chatgpt';
         break;
 
       case 'edit':
-        // For complex editing, prioritize quality (ChatGPT)
-        if (this.isModelAvailable('chatgpt')) return 'chatgpt';
+        // For complex editing, use the best available (Gemini first)
         if (this.isModelAvailable('gemini')) return 'gemini';
         if (this.isModelAvailable('sora')) return 'sora';
+        if (this.isModelAvailable('chatgpt')) return 'chatgpt';
         break;
 
       case 'refine':
-        // For refinement, can use any available model
-        if (this.isModelAvailable('chatgpt')) return 'chatgpt';
+        // For refinement, Gemini for best results, Sora for creative
         if (this.isModelAvailable('gemini')) return 'gemini';
         if (this.isModelAvailable('sora')) return 'sora';
+        if (this.isModelAvailable('chatgpt')) return 'chatgpt';
         break;
     }
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Star, Download, Maximize2, Trophy, Zap, Heart, Share2, Eye, CheckCircle, Copy, AlertCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Variant } from '../types';
-import { apiService } from '../services/api';
+import DownloadModal from './DownloadModal';
 
 interface VariantGalleryProps {
   variants: Variant[];
@@ -13,8 +13,8 @@ const VariantGallery: React.FC<VariantGalleryProps> = ({ variants }) => {
   const [hoveredVariant, setHoveredVariant] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set());
-  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
-  const [downloadErrors, setDownloadErrors] = useState<Set<string>>(new Set());
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadingVariant, setDownloadingVariant] = useState<Variant | null>(null);
 
   if (variants.length === 0) {
     return null;
@@ -45,35 +45,16 @@ const VariantGallery: React.FC<VariantGalleryProps> = ({ variants }) => {
     }
   };
 
-  const handleDownload = async (variant: Variant, format: 'jpg' | 'png' | 'webp' = 'jpg') => {
-    setDownloadingIds(prev => new Set(prev).add(variant.id));
-    setDownloadErrors(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(variant.id);
-      return newSet;
-    });
+  const handleDownloadClick = (variant: Variant) => {
+    setDownloadingVariant(variant);
+    setDownloadModalOpen(true);
+  };
 
-    try {
-      const exportResult = await apiService.exportImage(variant.image_id, format);
-      
-      // Create a temporary anchor element to trigger download
-      const link = document.createElement('a');
-      link.href = exportResult.download_url;
-      link.download = `variant_${variant.id}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-    } catch (error) {
-      console.error('Download failed:', error);
-      setDownloadErrors(prev => new Set(prev).add(variant.id));
-    } finally {
-      setDownloadingIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(variant.id);
-        return newSet;
-      });
-    }
+  const handleDownloadModalClose = () => {
+    setDownloadModalOpen(false);
+    setTimeout(() => {
+      setDownloadingVariant(null);
+    }, 300);
   };
 
   const containerVariants = {
@@ -285,31 +266,13 @@ const VariantGallery: React.FC<VariantGalleryProps> = ({ variants }) => {
                 {/* Action Buttons */}
                 <div className="flex space-x-2">
                   <motion.button 
-                    whileHover={{ scale: downloadingIds.has(variant.id) ? 1 : 1.02 }}
-                    whileTap={{ scale: downloadingIds.has(variant.id) ? 1 : 0.98 }}
-                    onClick={() => handleDownload(variant)}
-                    disabled={downloadingIds.has(variant.id)}
-                    className={`flex-1 flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-xl shadow-lg transition-all duration-200 ${
-                      downloadingIds.has(variant.id)
-                        ? 'bg-gray-500 cursor-not-allowed'
-                        : downloadErrors.has(variant.id)
-                        ? 'bg-gradient-to-r from-red-500 to-red-600 hover:shadow-red-500/25'
-                        : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:shadow-ai-glow'
-                    } text-white`}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleDownloadClick(variant)}
+                    className="flex-1 flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-xl shadow-lg transition-all duration-200 bg-gradient-to-r from-purple-500 to-pink-500 hover:shadow-ai-glow text-white"
                   >
-                    {downloadingIds.has(variant.id) ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : downloadErrors.has(variant.id) ? (
-                      <AlertCircle className="h-4 w-4 mr-2" />
-                    ) : (
-                      <Download className="h-4 w-4 mr-2" />
-                    )}
-                    {downloadingIds.has(variant.id) 
-                      ? '下载中...' 
-                      : downloadErrors.has(variant.id) 
-                      ? '重试'
-                      : '下载'
-                    }
+                    <Download className="h-4 w-4 mr-2" />
+                    下载
                   </motion.button>
                   <motion.button 
                     whileHover={{ scale: 1.05 }}
@@ -389,6 +352,13 @@ const VariantGallery: React.FC<VariantGalleryProps> = ({ variants }) => {
           </p>
         </div>
       </motion.div>
+
+      {/* Download Modal */}
+      <DownloadModal
+        isOpen={downloadModalOpen}
+        onClose={handleDownloadModalClose}
+        variant={downloadingVariant}
+      />
     </motion.div>
   );
 };

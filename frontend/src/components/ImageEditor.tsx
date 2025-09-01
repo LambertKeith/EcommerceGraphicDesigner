@@ -27,7 +27,6 @@ const ImageEditor: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [selectedModel, setSelectedModel] = useState<AIModelType | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'enhance' | 'export'>('enhance');
   const [imageLoadError, setImageLoadError] = useState(false);
 
   const handleStartEdit = async () => {
@@ -83,24 +82,6 @@ const ImageEditor: React.FC = () => {
     } catch (err) {
       setError('Failed to check job status');
       setIsProcessing(false);
-    }
-  };
-
-  const handleExport = async (format: 'jpg' | 'png' | 'webp', width?: number, height?: number) => {
-    if (!currentImage) return;
-
-    try {
-      const result = await apiService.exportImage(currentImage.id, format, width, height);
-      
-      const link = document.createElement('a');
-      link.href = result.download_url;
-      link.download = `exported_image.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed');
     }
   };
 
@@ -256,39 +237,13 @@ const ImageEditor: React.FC = () => {
               transition={{ delay: 0.2 }}
               className="xl:col-span-2 space-y-6"
             >
-              {/* Tab Navigation */}
-              <div className="flex space-x-1 backdrop-blur-xl bg-white/5 rounded-2xl p-1 border border-white/10">
-                {[
-                  { id: 'enhance', label: 'AI 增强', icon: Sparkles },
-                  { id: 'export', label: '导出选项', icon: Download }
-                ].map((tab) => (
-                  <motion.button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex-1 flex items-center justify-center space-x-2 py-3 px-4 rounded-xl transition-all duration-200 ${
-                      activeTab === tab.id
-                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-ai-glow'
-                        : 'text-white/60 hover:text-white/80 hover:bg-white/5'
-                    }`}
-                    whileHover={{ scale: activeTab === tab.id ? 1 : 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    <tab.icon className="h-4 w-4" />
-                    <span className="font-medium">{tab.label}</span>
-                  </motion.button>
-                ))}
-              </div>
 
               {/* Enhancement Panel */}
-              <AnimatePresence mode="wait">
-                {activeTab === 'enhance' && (
-                  <motion.div
-                    key="enhance"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="backdrop-blur-xl bg-white/10 rounded-3xl p-8 border border-white/10 shadow-glass"
-                  >
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="backdrop-blur-xl bg-white/10 rounded-3xl p-8 border border-white/10 shadow-glass"
+              >
                     <div className="flex items-center space-x-3 mb-6">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
                         <Wand2 className="h-5 w-5 text-white" />
@@ -396,67 +351,7 @@ const ImageEditor: React.FC = () => {
                         </>
                       )}
                     </motion.button>
-                  </motion.div>
-                )}
-
-                {/* Export Panel */}
-                {activeTab === 'export' && variants.length > 0 && (
-                  <motion.div
-                    key="export"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="backdrop-blur-xl bg-white/10 rounded-3xl p-8 border border-white/10 shadow-glass"
-                  >
-                    <div className="flex items-center space-x-3 mb-6">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">
-                        <Download className="h-5 w-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-bold text-white">导出选项</h3>
-                        <p className="text-white/60 text-sm">以多种格式下载您增强后的图像</p>
-                      </div>
-                    </div>
-
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {[
-                        { format: 'jpg' as const, size: '1080×1080', desc: '适合 Instagram', color: 'from-orange-500 to-red-500' },
-                        { format: 'png' as const, size: '1500×1500', desc: '高质量含透明度', color: 'from-green-500 to-emerald-500' },
-                        { format: 'webp' as const, size: '原始尺寸', desc: '最小文件大小', color: 'from-purple-500 to-pink-500' },
-                        { format: 'jpg' as const, size: '2000×2000', desc: '打印质量', color: 'from-blue-500 to-cyan-500' },
-                      ].map((option, index) => (
-                        <motion.button
-                          key={`${option.format}-${option.size}`}
-                          onClick={() => handleExport(option.format, 
-                            option.size === '1080×1080' ? 1080 : 
-                            option.size === '1500×1500' ? 1500 :
-                            option.size === '2000×2000' ? 2000 : undefined,
-                            option.size === '1080×1080' ? 1080 : 
-                            option.size === '1500×1500' ? 1500 :
-                            option.size === '2000×2000' ? 2000 : undefined
-                          )}
-                          className="p-4 bg-white/5 border border-white/20 rounded-xl hover:border-white/30 hover:bg-white/10 transition-all duration-200 group"
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                        >
-                          <div className="flex items-center space-x-4">
-                            <div className={`w-12 h-12 rounded-full bg-gradient-to-r ${option.color} flex items-center justify-center shadow-lg`}>
-                              <Download className="h-6 w-6 text-white" />
-                            </div>
-                            <div className="text-left flex-1">
-                              <div className="flex items-center space-x-2">
-                                <span className="font-semibold text-white uppercase">{option.format}</span>
-                                <span className="text-white/60 text-sm">{option.size}</span>
-                              </div>
-                              <p className="text-white/60 text-sm">{option.desc}</p>
-                            </div>
-                          </div>
-                        </motion.button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              </motion.div>
 
               {/* Processing Progress */}
               <AnimatePresence>

@@ -58,44 +58,32 @@ export class GeminiService extends AIService {
       
       const { base64Data, mimeType } = await this.prepareImageData(imageBuffer, imagePath);
       
-      const promptTemplates = this.buildPromptTemplates(options);
+      const promptTemplate = this.buildPrimaryPrompt(options);
       
-      const variants: Array<{
-        imageBuffer: Buffer;
-        score: number;
-        metadata: Record<string, any>;
-      }> = [];
+      console.log('Processing single high-quality image with Gemini...');
+      
+      // Generate single high-quality image instead of multiple variants
+      const processedImage = await this.callGeminiAPI(base64Data, mimeType, promptTemplate.base);
+      
+      if (!processedImage) {
+        throw new Error('Failed to generate processed image');
+      }
 
-      for (let i = 0; i < promptTemplates.length; i++) {
-        const template = promptTemplates[i];
-        try {
-          const processedImage = await this.callGeminiAPI(base64Data, mimeType, template.base);
-          
-          if (processedImage) {
-            variants.push({
-              imageBuffer: processedImage,
-              score: this.calculateVariantScore(template, i, !!options.prompt, !!options.context?.previous_edits?.length),
-              metadata: {
-                prompt: template.base,
-                type: options.type,
-                variation: i + 1,
-                processing_method: 'gemini_2.5_flash_image',
-                model: this.config.model
-              }
-            });
-          }
-        } catch (error) {
-          console.error(`Variant ${i + 1} generation failed:`, error);
+      const variant = {
+        imageBuffer: processedImage,
+        score: 0.95, // High score for single quality output
+        metadata: {
+          prompt: promptTemplate.base,
+          type: options.type,
+          processing_method: 'gemini_2.5_flash_image',
+          model: this.config.model,
+          quality_mode: 'single_best'
         }
-      }
-
-      if (variants.length === 0) {
-        throw new Error('No variants were successfully generated');
-      }
+      };
 
       return {
         success: true,
-        variants
+        variants: [variant] // Always return single best result
       };
       
     } catch (error) {
@@ -159,7 +147,7 @@ export class GeminiService extends AIService {
     return { base64Data, mimeType };
   }
 
-  private buildPromptTemplates(options: ProcessImageOptions): PromptTemplate[] {
+  private buildPrimaryPrompt(options: ProcessImageOptions): PromptTemplate {
     const context: PromptContext = {
       previousEdits: options.context?.previous_edits || [],
       productCategory: options.context?.product_category,
@@ -167,21 +155,46 @@ export class GeminiService extends AIService {
       userPreferences: options.context?.user_preferences
     };
 
+    // Get the best prompt for the task
     const prompts = promptTemplateService.generatePromptsForProcessing(
       options.type,
       options.prompt,
       context
     );
 
-    return prompts.map((prompt, index) => ({
-      base: prompt,
+    // Use the first (best) prompt with professional enhancements
+    const basePrompt = prompts[0] || 'Enhance this image for e-commerce use';
+    const enhancedPrompt = this.addProfessionalGuidance(basePrompt, options.type);
+
+    return {
+      base: enhancedPrompt,
       params: {
         type: options.type,
-        variation: index + 1,
         hasUserPrompt: !!options.prompt,
-        contextual: !!context.previousEdits?.length
+        contextual: !!context.previousEdits?.length,
+        model: 'gemini',
+        quality: 'premium'
       }
-    }));
+    };
+  }
+
+  private addProfessionalGuidance(basePrompt: string, type: string): string {
+    const professionalGuidance = `
+以专业电商摄影师的标准处理此图像：
+1. 保持原始主体的精确比例和视角
+2. 确保图像构图平衡、专业且美观
+3. 维持合适的光照、阴影和色彩平衡
+4. 达到商业产品摄影的质量标准
+5. 避免过度修改，保持自然真实感
+6. 确保最终输出为高质量、清晰的单张图像
+7. 如需背景处理，使用纯白色或透明背景
+8. 保持产品细节的完整性和清晰度
+
+任务要求：${basePrompt}
+
+请输出一张最高质量的处理结果图像。`;
+
+    return professionalGuidance;
   }
 
   private async callGeminiAPI(base64Data: string, mimeType: string, prompt: string): Promise<Buffer | null> {
@@ -296,11 +309,11 @@ export class GeminiService extends AIService {
     return {
       id: 'gemini' as AIModelType,
       name: 'Gemini 2.5 Flash',
-      description: '快速响应的图像处理模型，适合基础优化和日常使用',
-      capabilities: ['图像优化', '背景处理', '基础编辑', '快速生成'],
+      description: '顶级AI图像处理模型，最强大的处理能力和最高质量输出',
+      capabilities: ['顶级图像优化', '智能背景处理', '高级编辑', '专业修图', '完美细节处理'],
       speed: 'fast',
-      quality: 'high',
-      recommended: ['产品图优化', '背景去除', '日常编辑', '批量处理']
+      quality: 'premium',
+      recommended: ['专业产品摄影', '高端图像处理', '商业级修图', '品牌宣传图', '精品电商图']
     };
   }
 
