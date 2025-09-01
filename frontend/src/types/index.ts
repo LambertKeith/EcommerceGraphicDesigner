@@ -5,6 +5,24 @@ export interface ApiResponse<T = any> {
   message?: string;
 }
 
+export type AIModelType = 'gemini' | 'chatgpt' | 'sora';
+
+export interface AIModelInfo {
+  id: AIModelType;
+  name: string;
+  description: string;
+  capabilities: string[];
+  speed: 'fast' | 'medium' | 'slow';
+  quality: 'standard' | 'high' | 'premium';
+  recommended: string[];
+}
+
+export interface AIModelsResponse {
+  models: AIModelInfo[];
+  default: AIModelType;
+  total: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -42,6 +60,7 @@ export interface Job {
   created_at: string;
   finished_at?: string;
   error_msg?: string;
+  model?: AIModelType;
 }
 
 export interface Variant {
@@ -59,6 +78,7 @@ export interface JobStatus {
   progress?: number;
   result_variants?: Variant[];
   error_msg?: string;
+  model?: AIModelType;
 }
 
 export interface UploadResult {

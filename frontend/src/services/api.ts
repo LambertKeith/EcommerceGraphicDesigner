@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ApiResponse, UploadResult, Session, JobStatus } from '../types';
+import { ApiResponse, UploadResult, Session, JobStatus, AIModelsResponse, AIModelType } from '../types';
 
 const API_BASE_URL = '/api';
 
@@ -55,13 +55,15 @@ export const apiService = {
     sessionId: string,
     imageId: string,
     type: 'optimize' | 'edit' | 'refine',
-    prompt?: string
-  ): Promise<{ job_id: string }> {
-    const response = await api.post<ApiResponse<{ job_id: string }>>('/edit', {
+    prompt?: string,
+    model?: AIModelType
+  ): Promise<{ job_id: string; model: AIModelType }> {
+    const response = await api.post<ApiResponse<{ job_id: string; model: AIModelType }>>('/edit', {
       session_id: sessionId,
       image_id: imageId,
       type,
       prompt,
+      model,
     });
 
     if (!response.data.success) {
@@ -119,5 +121,25 @@ export const apiService = {
 
   createEventSource(jobId: string): EventSource {
     return new EventSource(`${API_BASE_URL}/job/stream/${jobId}`);
+  },
+
+  async getAvailableModels(): Promise<AIModelsResponse> {
+    const response = await api.get<ApiResponse<AIModelsResponse>>('/edit/models');
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get available models');
+    }
+
+    return response.data.data!;
+  },
+
+  async testModelConnection(model: AIModelType): Promise<{ success: boolean; error?: string }> {
+    const response = await api.post<ApiResponse<{ connection: { success: boolean; error?: string } }>>(`/edit/models/${model}/test`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to test model connection');
+    }
+
+    return response.data.data!.connection;
   },
 };

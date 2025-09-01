@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { JobModel, ImageModel, VariantModel, SessionModel } from '../models';
-import { geminiService } from '../services/gemini';
+import AIServiceFactory from '../services/aiServiceFactory';
+import { AIModelType } from '../services/aiService';
 import { fileStorage } from '../services/fileStorage';
 import { ApiResponse } from '../types';
 import { getFileUrl } from '../utils/fileUtils';
@@ -13,7 +14,7 @@ const sessionModel = new SessionModel();
 
 router.post('/', async (req, res, next) => {
   try {
-    const { session_id, image_id, type, prompt } = req.body;
+    const { session_id, image_id, type, prompt, model } = req.body;
     
     if (!session_id || !image_id || !type) {
       const response: ApiResponse = {
@@ -30,6 +31,32 @@ router.post('/', async (req, res, next) => {
         error: 'Invalid type. Must be: optimize, edit, or refine'
       };
       return res.status(400).json(response);
+    }
+
+    // Validate model if provided
+    let selectedModel: AIModelType;
+    if (model) {
+      const validModels: AIModelType[] = ['gemini', 'chatgpt', 'sora'];
+      if (!validModels.includes(model)) {
+        const response: ApiResponse = {
+          success: false,
+          error: `Invalid model. Must be one of: ${validModels.join(', ')}`
+        };
+        return res.status(400).json(response);
+      }
+      
+      if (!AIServiceFactory.isModelAvailable(model)) {
+        const response: ApiResponse = {
+          success: false,
+          error: `Model '${model}' is not available. Available models: ${AIServiceFactory.getAvailableModels().map(m => m.id).join(', ')}`
+        };
+        return res.status(400).json(response);
+      }
+      
+      selectedModel = model;
+    } else {
+      // Use recommended model based on task type
+      selectedModel = AIServiceFactory.getRecommendedModel(type as any);
     }
 
     const session = await sessionModel.findById(session_id);
@@ -55,7 +82,8 @@ router.post('/', async (req, res, next) => {
     processImageAsync(job.id, image.path, {
       type: type as any,
       prompt,
-      context: session.context_json
+      context: session.context_json,
+      model: selectedModel
     }).catch(error => {
       console.error('Async processing error:', error);
       jobModel.updateStatus(job.id, 'error', error.message);
@@ -63,7 +91,10 @@ router.post('/', async (req, res, next) => {
 
     const response: ApiResponse = {
       success: true,
-      data: { job_id: job.id }
+      data: { 
+        job_id: job.id,
+        model: selectedModel
+      }
     };
     
     res.json(response);
@@ -74,20 +105,27 @@ router.post('/', async (req, res, next) => {
 
 async function processImageAsync(jobId: string, imagePath: string, options: any) {
   try {
-    console.log(`Starting image processing for job ${jobId}`);
-    console.log(`Image path: ${imagePath}, Options:`, options);
+    const selectedModel: AIModelType = options.model || 'gemini';
+    console.log(`Starting image processing for job ${jobId} using model: ${selectedModel}`);
+    console.log(`Image path: ${imagePath}, Options:`, { ...options, model: selectedModel });
     
     await jobModel.updateStatus(jobId, 'running');
     
-    const result = await geminiService.processImage(imagePath, options);
+    // Get the appropriate AI service
+    const aiService = AIServiceFactory.getService(selectedModel);
+    const result = await aiService.processImage(imagePath, {
+      type: options.type,
+      prompt: options.prompt,
+      context: options.context
+    });
     
     if (!result.success) {
-      console.error(`Gemini processing failed for job ${jobId}:`, result.error);
+      console.error(`AI processing failed for job ${jobId} with model ${selectedModel}:`, result.error);
       await jobModel.updateStatus(jobId, 'error', result.error);
       return;
     }
 
-    console.log(`Gemini processing successful for job ${jobId}, generated ${result.variants.length} variants`);
+    console.log(`AI processing successful for job ${jobId} using ${selectedModel}, generated ${result.variants.length} variants`);
 
     const job = await jobModel.findById(jobId);
     if (!job) {
@@ -125,7 +163,7 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
           savedImage.filePath,
           savedImage.width,
           savedImage.height,
-          variant.metadata
+          { ...variant.metadata, ai_model: selectedModel }
         );
         
         console.log(`Created result image record with ID: ${resultImage.id}`);
@@ -138,7 +176,7 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
           resultImage.id,
           variant.score,
           thumbnailPath,
-          variant.metadata
+          { ...variant.metadata, ai_model: selectedModel }
         );
         
         console.log(`Created variant record with ID: ${variantRecord.id}`);
@@ -148,12 +186,12 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
       }
     }
     
-    console.log(`Completed processing ${variantIds.length} variants for job ${jobId}`);
+    console.log(`Completed processing ${variantIds.length} variants for job ${jobId} using ${selectedModel}`);
     
     await jobModel.updateVariants(jobId, variantIds);
     await jobModel.updateStatus(jobId, 'done');
     
-    console.log(`Job ${jobId} completed successfully`);
+    console.log(`Job ${jobId} completed successfully with model ${selectedModel}`);
     
   } catch (error) {
     console.error(`Image processing failed for job ${jobId}:`, error);
@@ -233,6 +271,66 @@ router.post('/refine', async (req, res, next) => {
     res.json(response);
   } catch (error) {
     next(error);
+  }
+});
+
+// Get available AI models
+router.get('/models', async (req, res, next) => {
+  try {
+    const models = AIServiceFactory.getAvailableModels();
+    const defaultModel = AIServiceFactory.getDefaultModel();
+    
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        models,
+        default: defaultModel,
+        total: models.length
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to get available models:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: 'Failed to get available models'
+    };
+    res.status(500).json(response);
+  }
+});
+
+// Test AI model connection
+router.post('/models/:model/test', async (req, res, next) => {
+  try {
+    const { model } = req.params;
+    
+    if (!['gemini', 'chatgpt', 'sora'].includes(model)) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Invalid model specified'
+      };
+      return res.status(400).json(response);
+    }
+
+    const result = await AIServiceFactory.testConnection(model as AIModelType);
+    
+    const response: ApiResponse = {
+      success: true,
+      data: {
+        model,
+        connection: result
+      }
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Model connection test failed:', error);
+    const response: ApiResponse = {
+      success: false,
+      error: error instanceof Error ? error.message : 'Connection test failed'
+    };
+    res.status(500).json(response);
   }
 });
 

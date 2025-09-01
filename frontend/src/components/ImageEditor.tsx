@@ -3,8 +3,10 @@ import { Wand2, RotateCw, Download, MessageSquare, Sparkles, Zap, Settings, Arro
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiService } from '../services/api';
 import { useAppStore } from '../stores/appStore';
+import { AIModelType } from '../types';
 import VariantGallery from './VariantGallery';
 import ProcessingProgress from './ProcessingProgress';
+import ModelSelector from './ModelSelector';
 
 const ImageEditor: React.FC = () => {
   const {
@@ -23,6 +25,7 @@ const ImageEditor: React.FC = () => {
 
   const [editType, setEditType] = useState<'optimize' | 'edit' | 'refine'>('optimize');
   const [prompt, setPrompt] = useState('');
+  const [selectedModel, setSelectedModel] = useState<AIModelType | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'enhance' | 'export'>('enhance');
   const [imageLoadError, setImageLoadError] = useState(false);
@@ -39,7 +42,8 @@ const ImageEditor: React.FC = () => {
         currentSession.id,
         currentImage.id,
         editType,
-        editType === 'optimize' ? undefined : prompt
+        editType === 'optimize' ? undefined : prompt,
+        selectedModel
       );
 
       setCurrentJob({
@@ -50,7 +54,8 @@ const ImageEditor: React.FC = () => {
         prompt: prompt,
         status: 'pending',
         result_variant_ids: [],
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        model: result.model
       });
 
       pollJobStatus(result.job_id);
@@ -327,6 +332,21 @@ const ImageEditor: React.FC = () => {
                         </motion.button>
                       ))}
                     </div>
+
+                    {/* AI Model Selection */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="mb-6"
+                    >
+                      <ModelSelector
+                        selectedModel={selectedModel}
+                        onModelSelect={setSelectedModel}
+                        editType={editType}
+                        disabled={isProcessing}
+                      />
+                    </motion.div>
 
                     {/* Prompt Input */}
                     <AnimatePresence>
