@@ -1,0 +1,822 @@
+openapi: 3.0.3
+info:
+  title: E-commerce Graphic Designer API
+  description: AI-powered image editing service for e-commerce product images
+  version: 1.0.0
+  contact:
+    name: Development Team
+    email: dev@example.com
+
+servers:
+  - url: http://localhost:3001/api
+    description: Development server
+  - url: https://api.example.com/api
+    description: Production server
+
+paths:
+  /health:
+    get:
+      tags: ['System']
+      summary: Health check endpoint
+      description: Returns the health status of the API
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /version:
+    get:
+      tags: ['System']
+      summary: API version information
+      description: Returns version information of the API
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  build:
+                    type: string
+                    example: "20231201-1234"
+
+  /upload:
+    post:
+      tags: ['Images']
+      summary: Upload an image and create a project
+      description: Upload an image file and automatically create a project for it
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: The image file to upload (max 10MB)
+                project_name:
+                  type: string
+                  default: "Untitled Project"
+                  description: Name for the project
+                owner_id:
+                  type: string
+                  default: "anonymous"
+                  description: Owner identifier
+      responses:
+        '200':
+          description: Image uploaded successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          image_id:
+                            type: string
+                            format: uuid
+                          project_id:
+                            type: string
+                            format: uuid
+                          url:
+                            type: string
+                            format: uri
+                          thumbnail_url:
+                            type: string
+                            format: uri
+                          width:
+                            type: integer
+                          height:
+                            type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /session:
+    post:
+      tags: ['Sessions']
+      summary: Create a new editing session
+      description: Create a new session for multi-round image editing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project_id
+              properties:
+                project_id:
+                  type: string
+                  format: uuid
+                  description: ID of the project to create session for
+                context:
+                  type: object
+                  description: Initial context for the session
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          session_id:
+                            type: string
+                            format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /session/{id}:
+    get:
+      tags: ['Sessions']
+      summary: Get session information
+      description: Retrieve details of a specific session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Session ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session information
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Session'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /edit:
+    post:
+      tags: ['AI Processing']
+      summary: Create image processing job
+      description: Submit an image for AI processing (optimize, edit, or refine)
+      parameters:
+        - name: idempotency-key
+          in: header
+          required: false
+          description: Idempotency key to prevent duplicate processing
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - image_id
+                - type
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                image_id:
+                  type: string
+                  format: uuid
+                type:
+                  type: string
+                  enum: [optimize, edit, refine]
+                  description: Type of processing to perform
+                prompt:
+                  type: string
+                  description: Processing instructions or description
+                model:
+                  $ref: '#/components/schemas/AIModelType'
+                  description: Preferred AI model (optional, will use recommended if not specified)
+      responses:
+        '200':
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          job_id:
+                            type: string
+                            format: uuid
+                          model:
+                            $ref: '#/components/schemas/AIModelType'
+                            description: The model that will be used for processing
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /edit/refine:
+    post:
+      tags: ['AI Processing']
+      summary: Refine an existing variant
+      description: Create a refinement job based on an existing variant
+      parameters:
+        - name: idempotency-key
+          in: header
+          required: false
+          description: Idempotency key to prevent duplicate processing
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - session_id
+                - variant_id
+                - instructions
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                variant_id:
+                  type: string
+                  format: uuid
+                instructions:
+                  type: string
+                  description: Refinement instructions
+      responses:
+        '200':
+          description: Refinement job created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          job_id:
+                            type: string
+                            format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /edit/models:
+    get:
+      tags: ['AI Processing']
+      summary: Get available AI models
+      description: Retrieve list of available AI models and their capabilities
+      responses:
+        '200':
+          description: Available models information
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          models:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/AIModelInfo'
+                          default:
+                            $ref: '#/components/schemas/AIModelType'
+                          total:
+                            type: integer
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /edit/models/{model}/test:
+    post:
+      tags: ['AI Processing']
+      summary: Test AI model connection
+      description: Test connectivity and availability of a specific AI model
+      parameters:
+        - name: model
+          in: path
+          required: true
+          description: Model to test
+          schema:
+            $ref: '#/components/schemas/AIModelType'
+      responses:
+        '200':
+          description: Connection test results
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          model:
+                            $ref: '#/components/schemas/AIModelType'
+                          connection:
+                            type: object
+                            properties:
+                              success:
+                                type: boolean
+                              error:
+                                type: string
+                                nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /job/{id}:
+    get:
+      tags: ['Jobs']
+      summary: Get job status
+      description: Retrieve current status and results of a processing job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Job ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status information
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /job/stream/{id}:
+    get:
+      tags: ['Jobs']
+      summary: Stream job progress
+      description: Real-time streaming of job progress using Server-Sent Events
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Job ID
+          schema:
+            type: string
+            format: uuid
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: Last received event ID for reconnection
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-sent events with progress updates
+              examples:
+                progress:
+                  value: "event: progress\ndata: {\"status\":\"running\",\"progress\":50,\"error_msg\":null}\n\n"
+                complete:
+                  value: "event: complete\ndata: {\"job_id\":\"123e4567-e89b-12d3-a456-426614174000\"}\n\n"
+                error:
+                  value: "event: error\ndata: {\"error\":\"Processing failed\"}\n\n"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /image/{id}:
+    get:
+      tags: ['Images']
+      summary: Get image information
+      description: Retrieve metadata and URL for a specific image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Image ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Image information
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Image'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /image/{id}/export:
+    post:
+      tags: ['Images']
+      summary: Export image in specified format
+      description: Export an image with optional format and size conversion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Image ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [jpg, png, webp]
+                  default: jpg
+                  description: Export format
+                width:
+                  type: integer
+                  minimum: 1
+                  maximum: 4096
+                  description: Target width (optional)
+                height:
+                  type: integer
+                  minimum: 1
+                  maximum: 4096
+                  description: Target height (optional)
+      responses:
+        '200':
+          description: Export successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          download_url:
+                            type: string
+                            format: uri
+                            description: URL to download the exported image
+                          expires_at:
+                            type: string
+                            format: date-time
+                            description: When the download link expires
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+        data:
+          type: object
+          nullable: true
+          description: Response data (present on success)
+        error:
+          type: string
+          nullable: true
+          description: Error message (present on failure)
+
+    AIModelType:
+      type: string
+      enum: [gemini, chatgpt, sora]
+      description: Available AI models
+
+    AIModelInfo:
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/AIModelType'
+        name:
+          type: string
+          description: Human-readable model name
+        description:
+          type: string
+          description: Model description
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [optimize, edit, refine, background_replace]
+          description: Supported operations
+        tier:
+          type: string
+          enum: [premium, creative, standard]
+          description: Model quality tier
+        available:
+          type: boolean
+          description: Whether the model is currently available
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        context_json:
+          type: object
+          additionalProperties: true
+          description: Session context and history
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Image:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        path:
+          type: string
+          description: Storage path of the image
+        width:
+          type: integer
+        height:
+          type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Image metadata
+        url:
+          type: string
+          format: uri
+          description: Public URL to access the image
+        created_at:
+          type: string
+          format: date-time
+
+    Variant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        image_id:
+          type: string
+          format: uuid
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Quality score of the variant
+        thumbnail_path:
+          type: string
+          description: Path to thumbnail image
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Variant metadata including AI model used
+
+    JobStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, queued, running, done, error, failed]
+          description: Current job status
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Processing progress percentage
+        result_variants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Variant'
+          description: Generated variants (available when status is 'done')
+        error_msg:
+          type: string
+          nullable: true
+          description: Error message if job failed
+        model_used:
+          $ref: '#/components/schemas/AIModelType'
+          nullable: true
+          description: AI model used for processing
+        attempts:
+          type: integer
+          minimum: 1
+          description: Number of processing attempts
+        last_error:
+          type: string
+          nullable: true
+          description: Last error encountered during processing
+
+    ErrorCode:
+      type: string
+      enum:
+        - E_AI_MODEL_UNAVAILABLE
+        - E_INPUT_TOO_LARGE
+        - E_PROMPT_INVALID
+        - E_STORAGE_IO
+        - E_INVALID_FILE_TYPE
+        - E_RATE_LIMITED
+        - E_SESSION_NOT_FOUND
+        - E_IMAGE_NOT_FOUND
+        - E_JOB_NOT_FOUND
+        - E_PROCESSING_FAILED
+      description: Standardized error codes
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input parameters
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Invalid request parameters"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Resource not found"
+
+    RateLimited:
+      description: Too many requests - rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Number of seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Rate limit exceeded. Please retry after specified time."
+
+    PayloadTooLarge:
+      description: Uploaded file is too large
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "File size exceeds maximum limit of 10MB"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiResponse'
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Internal server error"
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication (if implemented)
+
+tags:
+  - name: System
+    description: System health and information endpoints
+  - name: Images
+    description: Image upload, retrieval, and export operations
+  - name: Sessions
+    description: Multi-round editing session management
+  - name: AI Processing
+    description: AI-powered image processing and model management
+  - name: Jobs
+    description: Asynchronous job status and progress tracking

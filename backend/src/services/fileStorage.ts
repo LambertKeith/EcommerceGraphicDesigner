@@ -40,19 +40,28 @@ export class FileStorageService {
     height: number;
     size: number;
   }> {
-    const filename = `${uuidv4()}.${this.getFileExtension(file.originalname)}`;
+    // Process and validate the image (includes EXIF stripping and resizing)
+    const processed = await this.processAndValidateImage(file);
+    
+    if (!processed.success || !processed.processedBuffer || !processed.metadata) {
+      throw new Error(processed.error || 'Failed to process image');
+    }
+
+    // Generate filename with appropriate extension
+    const extension = processed.metadata.format === 'jpeg' ? 'jpg' : 
+                     processed.metadata.format || this.getFileExtension(file.originalname);
+    const filename = `${uuidv4()}.${extension}`;
     const filePath = path.join(this.uploadsDir, filename);
     
-    await fs.writeFile(filePath, file.buffer);
-    
-    const metadata = await sharp(filePath).metadata();
+    // Save the processed image buffer
+    await fs.writeFile(filePath, processed.processedBuffer);
     
     return {
       filePath: filePath.replace(path.resolve('../storage'), ''),
       filename,
-      width: metadata.width || 0,
-      height: metadata.height || 0,
-      size: file.size
+      width: processed.metadata.width,
+      height: processed.metadata.height,
+      size: processed.metadata.size
     };
   }
 
@@ -164,11 +173,154 @@ export class FileStorageService {
     return path.resolve('../storage', relativePath.replace(/^\//, ''));
   }
 
-  validateImageFile(file: Express.Multer.File): boolean {
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  validateImageFile(file: Express.Multer.File): { valid: boolean; error?: string } {
+    // Check MIME type
+    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedMimeTypes.includes(file.mimetype.toLowerCase())) {
+      return {
+        valid: false,
+        error: `Invalid file type: ${file.mimetype}. Allowed types: ${allowedMimeTypes.join(', ')}`
+      };
+    }
+
+    // Check file size
     const maxSize = parseInt(process.env.MAX_FILE_SIZE || '10485760'); // 10MB default
-    
-    return allowedMimeTypes.includes(file.mimetype) && file.size <= maxSize;
+    if (file.size > maxSize) {
+      return {
+        valid: false,
+        error: `File size ${Math.round(file.size / 1024 / 1024)}MB exceeds maximum allowed size ${Math.round(maxSize / 1024 / 1024)}MB`
+      };
+    }
+
+    // Check file extension matches MIME type
+    const extension = this.getFileExtension(file.originalname);
+    const expectedExtensions: Record<string, string[]> = {
+      'image/jpeg': ['jpg', 'jpeg'],
+      'image/jpg': ['jpg', 'jpeg'],
+      'image/png': ['png'],
+      'image/webp': ['webp'],
+      'image/gif': ['gif']
+    };
+
+    const validExtensions = expectedExtensions[file.mimetype.toLowerCase()];
+    if (!validExtensions?.includes(extension)) {
+      return {
+        valid: false,
+        error: `File extension '${extension}' does not match MIME type '${file.mimetype}'`
+      };
+    }
+
+    // Basic malicious file detection by filename
+    const suspiciousPatterns = [
+      /\.php$/i, /\.js$/i, /\.html$/i, /\.htm$/i, /\.asp$/i, /\.aspx$/i,
+      /\.jsp$/i, /\.py$/i, /\.rb$/i, /\.exe$/i, /\.bat$/i, /\.sh$/i,
+      /\.scr$/i, /\.com$/i, /\.pif$/i, /\.vbs$/i, /\.jar$/i
+    ];
+
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(file.originalname)) {
+        return {
+          valid: false,
+          error: `Suspicious file extension detected in filename: ${file.originalname}`
+        };
+      }
+    }
+
+    // Check for null bytes in filename (path traversal attempt)
+    if (file.originalname.includes('\0') || file.originalname.includes('..')) {
+      return {
+        valid: false,
+        error: 'Invalid characters detected in filename'
+      };
+    }
+
+    return { valid: true };
+  }
+
+  // Enhanced file processing with EXIF stripping and size limits
+  async processAndValidateImage(file: Express.Multer.File): Promise<{
+    success: boolean;
+    processedBuffer?: Buffer;
+    metadata?: {
+      width: number;
+      height: number;
+      format: string;
+      size: number;
+    };
+    error?: string;
+  }> {
+    try {
+      // Create sharp instance from buffer
+      const image = sharp(file.buffer);
+      const metadata = await image.metadata();
+
+      if (!metadata.width || !metadata.height) {
+        return {
+          success: false,
+          error: 'Invalid image: Could not read image dimensions'
+        };
+      }
+
+      // Check image dimensions
+      const maxDimension = parseInt(process.env.MAX_IMAGE_DIMENSION || '4096');
+      if (metadata.width > maxDimension || metadata.height > maxDimension) {
+        // Auto-resize large images
+        const aspectRatio = metadata.width / metadata.height;
+        let newWidth: number;
+        let newHeight: number;
+
+        if (metadata.width > metadata.height) {
+          newWidth = maxDimension;
+          newHeight = Math.round(maxDimension / aspectRatio);
+        } else {
+          newHeight = maxDimension;
+          newWidth = Math.round(maxDimension * aspectRatio);
+        }
+
+        console.log(`Resizing image from ${metadata.width}x${metadata.height} to ${newWidth}x${newHeight}`);
+
+        const processedBuffer = await image
+          .resize(newWidth, newHeight, {
+            fit: 'inside',
+            withoutEnlargement: false
+          })
+          .withMetadata({}) // Strip EXIF data
+          .jpeg({ quality: 85 }) // Convert to JPEG for consistency
+          .toBuffer();
+
+        return {
+          success: true,
+          processedBuffer,
+          metadata: {
+            width: newWidth,
+            height: newHeight,
+            format: 'jpeg',
+            size: processedBuffer.length
+          }
+        };
+      }
+
+      // For normal-sized images, just strip EXIF and standardize
+      const processedBuffer = await image
+        .withMetadata({}) // Strip EXIF data and other metadata
+        .toBuffer();
+
+      return {
+        success: true,
+        processedBuffer,
+        metadata: {
+          width: metadata.width,
+          height: metadata.height,
+          format: metadata.format || 'unknown',
+          size: processedBuffer.length
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to process image: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
   }
 }
 

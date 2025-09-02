@@ -15,6 +15,7 @@ const sessionModel = new SessionModel();
 router.post('/', async (req, res, next) => {
   try {
     const { session_id, image_id, type, prompt, model } = req.body;
+    const idempotencyKey = req.headers['idempotency-key'] as string;
     
     if (!session_id || !image_id || !type) {
       const response: ApiResponse = {
@@ -22,6 +23,22 @@ router.post('/', async (req, res, next) => {
         error: 'session_id, image_id, and type are required'
       };
       return res.status(400).json(response);
+    }
+
+    // Check for existing job with same idempotency key
+    if (idempotencyKey) {
+      const existingJob = await jobModel.findByIdempotencyKey(session_id, idempotencyKey);
+      if (existingJob) {
+        const response: ApiResponse = {
+          success: true,
+          data: { 
+            job_id: existingJob.id,
+            model: existingJob.model_used || 'gemini',
+            message: 'Job already exists (idempotent)'
+          }
+        };
+        return res.json(response);
+      }
     }
 
     const validTypes = ['optimize', 'edit', 'refine'];
@@ -77,7 +94,7 @@ router.post('/', async (req, res, next) => {
       return res.status(404).json(response);
     }
 
-    const job = await jobModel.create(session_id, image_id, type, prompt);
+    const job = await jobModel.create(session_id, image_id, type, prompt, selectedModel);
     
     processImageAsync(job.id, image.path, {
       type: type as any,
@@ -86,7 +103,7 @@ router.post('/', async (req, res, next) => {
       model: selectedModel
     }).catch(error => {
       console.error('Async processing error:', error);
-      jobModel.updateStatus(job.id, 'error', error.message);
+      jobModel.updateStatus(job.id, 'error', error.message, selectedModel);
     });
 
     const response: ApiResponse = {
@@ -109,7 +126,7 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
     console.log(`Starting image processing for job ${jobId} using model: ${selectedModel}`);
     console.log(`Image path: ${imagePath}, Options:`, { ...options, model: selectedModel });
     
-    await jobModel.updateStatus(jobId, 'running');
+    await jobModel.updateStatus(jobId, 'running', undefined, selectedModel);
     
     // Get the appropriate AI service
     const aiService = AIServiceFactory.getService(selectedModel);
@@ -121,7 +138,7 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
     
     if (!result.success) {
       console.error(`AI processing failed for job ${jobId} with model ${selectedModel}:`, result.error);
-      await jobModel.updateStatus(jobId, 'error', result.error);
+      await jobModel.updateStatus(jobId, 'error', result.error, selectedModel);
       return;
     }
 
@@ -137,7 +154,7 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
     const session = await sessionModel.findById(job.session_id);
     if (!session) {
       console.error(`Session ${job.session_id} not found for job ${jobId}`);
-      await jobModel.updateStatus(jobId, 'error', 'Session not found');
+      await jobModel.updateStatus(jobId, 'error', 'Session not found', selectedModel);
       return;
     }
 
@@ -189,19 +206,20 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
     console.log(`Completed processing ${variantIds.length} variants for job ${jobId} using ${selectedModel}`);
     
     await jobModel.updateVariants(jobId, variantIds);
-    await jobModel.updateStatus(jobId, 'done');
+    await jobModel.updateStatus(jobId, 'done', undefined, selectedModel);
     
     console.log(`Job ${jobId} completed successfully with model ${selectedModel}`);
     
   } catch (error) {
     console.error(`Image processing failed for job ${jobId}:`, error);
-    await jobModel.updateStatus(jobId, 'error', error instanceof Error ? error.message : 'Processing failed');
+    await jobModel.updateStatus(jobId, 'error', error instanceof Error ? error.message : 'Processing failed', 'unknown');
   }
 }
 
 router.post('/refine', async (req, res, next) => {
   try {
     const { session_id, variant_id, instructions } = req.body;
+    const idempotencyKey = req.headers['idempotency-key'] as string;
     
     if (!session_id || !variant_id || !instructions) {
       const response: ApiResponse = {
@@ -209,6 +227,21 @@ router.post('/refine', async (req, res, next) => {
         error: 'session_id, variant_id, and instructions are required'
       };
       return res.status(400).json(response);
+    }
+
+    // Check for existing job with same idempotency key
+    if (idempotencyKey) {
+      const existingJob = await jobModel.findByIdempotencyKey(session_id, idempotencyKey);
+      if (existingJob) {
+        const response: ApiResponse = {
+          success: true,
+          data: { 
+            job_id: existingJob.id,
+            message: 'Job already exists (idempotent)'
+          }
+        };
+        return res.json(response);
+      }
     }
 
     const session = await sessionModel.findById(session_id);
@@ -238,7 +271,10 @@ router.post('/refine', async (req, res, next) => {
       return res.status(404).json(response);
     }
 
-    const job = await jobModel.create(session_id, image.id, 'refine', instructions);
+    // Get recommended model for refine operation
+    const selectedModel = AIServiceFactory.getRecommendedModel('refine');
+    
+    const job = await jobModel.create(session_id, image.id, 'refine', instructions, selectedModel);
     
     const updatedContext = {
       ...session.context_json,
@@ -257,10 +293,11 @@ router.post('/refine', async (req, res, next) => {
     processImageAsync(job.id, image.path, {
       type: 'refine',
       prompt: instructions,
-      context: updatedContext
+      context: updatedContext,
+      model: selectedModel
     }).catch(error => {
       console.error('Async refine processing error:', error);
-      jobModel.updateStatus(job.id, 'error', error.message);
+      jobModel.updateStatus(job.id, 'error', error.message, selectedModel);
     });
 
     const response: ApiResponse = {

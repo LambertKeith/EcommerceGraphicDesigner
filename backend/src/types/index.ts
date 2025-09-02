@@ -29,11 +29,17 @@ export interface Job {
   input_image_id: string;
   type: 'optimize' | 'edit' | 'refine' | 'export';
   prompt: string;
-  status: 'pending' | 'running' | 'done' | 'error';
+  status: 'pending' | 'queued' | 'running' | 'done' | 'error' | 'failed';
   result_variant_ids: string[];
   created_at: Date;
   finished_at?: Date;
   error_msg?: string;
+  // New enhanced fields
+  attempts: number;
+  last_error?: string;
+  model_used?: string;
+  started_at?: Date;
+  queued_at: Date;
 }
 
 export interface Variant {
@@ -69,4 +75,8 @@ export interface JobStatus {
   progress?: number;
   result_variants?: Variant[];
   error_msg?: string;
+  // New enhanced fields
+  model_used?: string;
+  attempts?: number;
+  last_error?: string;
 }

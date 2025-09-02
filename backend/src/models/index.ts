@@ -65,10 +65,10 @@ export class ImageModel {
 }
 
 export class JobModel {
-  async create(session_id: string, input_image_id: string, type: Job['type'], prompt?: string): Promise<Job> {
+  async create(session_id: string, input_image_id: string, type: Job['type'], prompt?: string, model?: string): Promise<Job> {
     const result = await db.query(
-      'INSERT INTO jobs (session_id, input_image_id, type, prompt) VALUES ($1, $2, $3, $4) RETURNING *',
-      [session_id, input_image_id, type, prompt]
+      'INSERT INTO jobs (session_id, input_image_id, type, prompt, model_used, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [session_id, input_image_id, type, prompt, model, 'queued']
     );
     return result.rows[0];
   }
@@ -78,11 +78,10 @@ export class JobModel {
     return result.rows[0] || null;
   }
 
-  async updateStatus(id: string, status: Job['status'], error_msg?: string): Promise<Job> {
-    const finished_at = status === 'done' || status === 'error' ? 'NOW()' : null;
+  async updateStatus(id: string, status: Job['status'], error_msg?: string, model_used?: string): Promise<Job> {
     const result = await db.query(
-      `UPDATE jobs SET status = $1, error_msg = $2, finished_at = ${finished_at ? finished_at : 'finished_at'} WHERE id = $3 RETURNING *`,
-      [status, error_msg, id]
+      'UPDATE jobs SET status = $1, error_msg = $2, model_used = COALESCE($3, model_used), last_error = CASE WHEN $1 IN (\'error\', \'failed\') THEN $2 ELSE last_error END WHERE id = $4 RETURNING *',
+      [status, error_msg, model_used, id]
     );
     return result.rows[0];
   }
@@ -93,6 +92,39 @@ export class JobModel {
       [result_variant_ids, id]
     );
     return result.rows[0];
+  }
+
+  async incrementAttempts(id: string): Promise<Job> {
+    const result = await db.query(
+      'UPDATE jobs SET attempts = attempts + 1 WHERE id = $1 RETURNING *',
+      [id]
+    );
+    return result.rows[0];
+  }
+
+  async getJobsForRetry(limit: number = 10): Promise<Job[]> {
+    const result = await db.query(
+      'SELECT * FROM jobs WHERE status = $1 AND attempts < $2 ORDER BY queued_at ASC LIMIT $3',
+      ['queued', 3, limit]
+    );
+    return result.rows;
+  }
+
+  async recoverStalledJobs(): Promise<number> {
+    const result = await db.query(
+      'SELECT recover_stalled_jobs() as recovered_count'
+    );
+    return result.rows[0]?.recovered_count || 0;
+  }
+
+  async findByIdempotencyKey(sessionId: string, idempotencyKey: string): Promise<Job | null> {
+    // For now, we'll use a simple approach based on session and recent jobs
+    // In production, you'd want a dedicated idempotency_keys table
+    const result = await db.query(
+      'SELECT * FROM jobs WHERE session_id = $1 AND created_at > NOW() - INTERVAL \'1 hour\' ORDER BY created_at DESC LIMIT 1',
+      [sessionId]
+    );
+    return result.rows[0] || null;
   }
 }
 

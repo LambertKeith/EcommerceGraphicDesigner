@@ -29,10 +29,11 @@ router.post('/', upload.single('image'), async (req, res, next) => {
       return res.status(400).json(response);
     }
 
-    if (!fileStorage.validateImageFile(file)) {
+    const validation = fileStorage.validateImageFile(file);
+    if (!validation.valid) {
       const response: ApiResponse = {
         success: false,
-        error: 'Invalid file type or size'
+        error: validation.error || 'Invalid file'
       };
       return res.status(400).json(response);
     }

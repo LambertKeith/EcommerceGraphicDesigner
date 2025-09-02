@@ -6,6 +6,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
+import fs from 'fs';
+import yaml from 'js-yaml';
 
 import { db } from './services/database';
 import { fileStorage } from './services/fileStorage';
@@ -20,6 +24,7 @@ import editRoutes from './routes/edit';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
 
 app.use(helmet());
 app.use(cors({
@@ -46,9 +51,47 @@ app.use('/api/job', jobRoutes);
 app.use('/api/image', imageRoutes);
 app.use('/api/edit', editRoutes);
 
+// Health and version endpoints
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
+
+app.get('/api/version', (req, res) => {
+  res.json({ 
+    version: packageJson.version,
+    build: process.env.BUILD_ID || 'dev',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Load OpenAPI spec
+const openApiSpec = yaml.load(fs.readFileSync(path.join(__dirname, '../../openapi.yaml'), 'utf8')) as any;
+
+// Swagger UI setup
+const swaggerOptions = {
+  definition: {
+    ...openApiSpec,
+    servers: [
+      {
+        url: `http://localhost:${PORT}/api`,
+        description: 'Development server'
+      },
+      ...(openApiSpec?.servers || [])
+    ]
+  },
+  apis: [] // We're using the external YAML file
+};
+
+const specs = swaggerJsdoc(swaggerOptions);
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(specs, {
+  explorer: true,
+  customSiteTitle: 'E-commerce Graphic Designer API',
+  customfavIcon: '/favicon.ico',
+  customCss: '.swagger-ui .topbar { display: none }',
+  swaggerOptions: {
+    persistAuthorization: true
+  }
+}));
 
 app.use(errorHandler);
 
