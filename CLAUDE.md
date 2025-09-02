@@ -71,16 +71,20 @@ docker-compose exec backend pnpm run migrate
 ## Architecture Overview
 
 ### System Design
-This is a full-stack AI-powered e-commerce image editor built around Google Gemini 2.5 Flash API. The application processes product images through AI enhancement with real-time progress tracking.
+This is a full-stack AI-powered e-commerce image editor with multi-model AI support (Gemini, Sora, ChatGPT). The application processes product images through AI enhancement with real-time progress tracking and intelligent model selection.
 
-**Flow**: Image Upload → Project/Session Creation → AI Processing Job → Multiple Variants Generation → Export
+**Flow**: Image Upload → Project/Session Creation → AI Model Selection → Processing Job → Single High-Quality Variant → Download Modal
 
 ### Backend Architecture (`backend/`)
 
 **Core Services:**
 - `services/database.ts` - PostgreSQL connection and migration runner
 - `services/fileStorage.ts` - Local file system management (uploads, results, thumbnails, exports) 
-- `services/gemini.ts` - Gemini 2.5 Flash Image API integration for direct image processing
+- `services/aiService.ts` - Abstract base class for unified AI service interface
+- `services/aiServiceFactory.ts` - Factory pattern for AI model management and selection
+- `services/gemini.ts` - Gemini 2.5 Flash API integration (premium tier)
+- `services/sora.ts` - Sora Image API integration (creative tier) 
+- `services/chatgpt.ts` - ChatGPT Vision API integration (standard tier)
 - `services/promptTemplate.ts` - E-commerce optimized prompt templates for different processing types
 
 **API Structure:**
@@ -100,29 +104,52 @@ This is a full-stack AI-powered e-commerce image editor built around Google Gemi
 
 **Key Components:**
 - `components/ImageUpload.tsx` - Drag-and-drop upload with react-dropzone
-- `components/ImageEditor.tsx` - Main editing interface with AI processing controls
-- `components/VariantGallery.tsx` - Display AI-generated variants with scoring
+- `components/ImageEditor.tsx` - Main editing interface with AI model selection and processing controls
+- `components/ModelSelector.tsx` - AI model selection interface with capability indicators
+- `components/VariantGallery.tsx` - Display AI-generated variants with integrated download functionality
+- `components/DownloadModal.tsx` - Advanced export modal with format and resolution selection
 - `components/ProcessingProgress.tsx` - Real-time job progress with SSE
 
 **API Integration:** `services/api.ts` provides typed API client with axios for all backend communication.
 
 ### AI Processing Pipeline
 
-**Gemini Integration:** The `gemini.ts` service wraps Google's Generative AI with three enhancement levels:
-1. **Basic Enhancement** - 1080x1080, white background, basic adjustments
-2. **Advanced Enhancement** - 1500x1500, enhanced color/sharpening, gamma correction  
-3. **Minimal Enhancement** - Conservative adjustments, smaller file size
+**Multi-Model Architecture:** The system supports three AI models with different capabilities and optimization levels:
 
-**Job Processing:** Async processing with database job tracking, generates 2-3 scored variants per request, automatic thumbnail generation.
+1. **Gemini 2.5 Flash** (Premium Tier) - 顶级AI图像处理模型
+   - Highest processing capability and quality output
+   - Professional product photography optimization
+   - Advanced background processing and detail enhancement
+   - Best for: 专业产品摄影, 高端图像处理, 商业级修图, 品牌宣传图
+
+2. **Sora Image** (Creative Tier) - 高级创意AI模型
+   - Creative artistic processing and visual innovation
+   - Style transformation and artistic filters
+   - Unique visual effects while maintaining product integrity
+   - Best for: 艺术创作, 创意设计, 风格实验, 视觉艺术
+
+3. **ChatGPT Vision** (Standard Tier) - 基础图像处理模型
+   - Standard image editing and basic optimization
+   - Daily use image processing with natural appearance
+   - Reliable baseline quality for routine tasks
+   - Best for: 日常编辑, 基础优化, 简单修图, 入门级处理
+
+**Model Selection Logic:** Factory pattern with intelligent recommendations based on task type and capability hierarchy (Gemini > Sora > ChatGPT).
+
+**Processing Optimization:** Each service generates single high-quality images with professional system prompts to ensure consistent proportions, perspectives, and commercial-grade results.
+
+**Job Processing:** Async processing with database job tracking, single variant generation per request, automatic thumbnail generation.
 
 ### Environment Configuration
 
 **Required Environment Variables:**
 - `DATABASE_URL` - PostgreSQL connection string
 - `REDIS_URL` - Redis connection for caching/sessions  
-- `GOOGLE_API_KEY` - Gemini API key for AI processing
-- `GEMINI_API_URL` - Gemini API endpoint URL (default: https://api.laozhang.ai/v1/chat/completions)
+- `GOOGLE_API_KEY` - Unified API key for AI processing (used by all models)
+- `GEMINI_API_URL` - API endpoint URL (default: https://api.laozhang.ai/v1/chat/completions)
 - `GEMINI_MODEL` - Gemini model name (default: gemini-2.5-flash-image-preview)
+- `SORA_MODEL` - Sora model name (default: sora_image)
+- `CHATGPT_MODEL` - ChatGPT model name (default: gpt-4o-image-vip)
 - `RUN_MIGRATIONS` - Set to 'true' to run database migrations on startup
 
 **File Storage Paths:** All paths relative to `../storage/` from backend directory.
@@ -130,6 +157,14 @@ This is a full-stack AI-powered e-commerce image editor built around Google Gemi
 ### Multi-Round Editing Context
 
 Sessions maintain editing context in `context_json` JSONB field. Each refinement operation updates session context with previous edit history, allowing AI to maintain consistency across multiple enhancement rounds.
+
+### User Experience Features
+
+**Intelligent Model Selection:** Users can choose from three AI models with clear capability indicators and task-specific recommendations. The system provides automatic fallbacks and intelligent suggestions based on processing requirements.
+
+**Streamlined Download Process:** Direct download functionality integrated into image previews with comprehensive export modal supporting multiple formats (JPG, PNG, WebP) and resolution options (原始尺寸, 1920x1920, 1080x1080, 512x512).
+
+**Real-time Processing Feedback:** SSE-based progress tracking with detailed status updates and error handling throughout the AI processing pipeline.
 
 ### Development Notes
 
