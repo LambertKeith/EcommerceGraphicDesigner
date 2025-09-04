@@ -37,6 +37,8 @@ cd backend
 pnpm run dev  # Migrations run automatically on server start
 
 # Note: New migration 002_enhance_jobs_table.sql adds enhanced job tracking
+# Note: Migration 003_api_configurations.sql adds API configuration management
+# Note: Migration 004_fix_jobs_table_consistency.sql fixes PostgreSQL type consistency issues
 ```
 
 ### Building and Testing
@@ -92,6 +94,7 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 - `services/sora.ts` - Sora Image API integration (creative tier) 
 - `services/chatgpt.ts` - ChatGPT Vision API integration (standard tier)
 - `services/promptTemplate.ts` - E-commerce optimized prompt templates for different processing types
+- `services/apiConfigService.ts` - API configuration management with encrypted key storage and connection testing
 
 **API Structure:**
 - `routes/upload.ts` - Enhanced image upload with security validation and EXIF cleaning
@@ -99,16 +102,20 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 - `routes/edit.ts` - AI processing job creation with idempotency support and async processing
 - `routes/job.ts` - Enhanced job status polling and SSE progress streams with reconnection support
 - `routes/image.ts` - Image retrieval and export functionality
+- `routes/config.ts` - API configuration management with encrypted key storage and testing
 
 **Middleware & Utilities:**
 - `middleware/errorHandler.ts` - Comprehensive error handling with user-friendly messages
 - `middleware/rateLimiter.ts` - Request rate limiting and abuse protection
 - `utils/errorSystem.ts` - Standardized error codes and multi-language support
+- `utils/apiKeyEncryption.ts` - Secure API key encryption/decryption utilities
 
-**Database Schema:** Enhanced 5-table design (projects, sessions, images, jobs, variants) with:
+**Database Schema:** Enhanced 6-table design (projects, sessions, images, jobs, variants, api_configurations) with:
 - UUID primary keys and JSONB context storage
 - Advanced job tracking: attempts, last_error, model_used, started_at, queued_at
 - Status machine: pending → queued → running → done/error/failed
+- API configuration management with encrypted key storage and connection testing
+- PostgreSQL type consistency with proper VARCHAR/TEXT field handling
 
 **File Storage:** Local file system with enhanced security:
 - Automatic EXIF data stripping
@@ -118,7 +125,9 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 
 ### Frontend Architecture (`frontend/`)
 
-**State Management:** Zustand store (`stores/appStore.ts`) manages global application state including current image, session, job status, and processing state.
+**State Management:** 
+- `stores/appStore.ts` - Main application state including current image, session, job status, and processing state
+- `stores/apiConfigStore.ts` - API configuration state management with encrypted key handling and connection testing
 
 **Key Components:**
 - `components/ImageUpload.tsx` - Drag-and-drop upload with react-dropzone
@@ -127,11 +136,40 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 - `components/VariantGallery.tsx` - Display AI-generated variants with integrated download functionality
 - `components/DownloadModal.tsx` - Advanced export modal with format and resolution selection
 - `components/ProcessingProgress.tsx` - Real-time job progress with SSE and reconnection support
+- `components/InitialSetupWizard.tsx` - First-time setup wizard for API configuration
+- `components/ApiSettingsPage.tsx` - API configuration management interface
+- `components/AppConfigWrapper.tsx` - Configuration state management wrapper
 
 **API Integration:** 
 - `services/api.ts` - Legacy typed API client
 - `services/apiGenerated.ts` - Auto-generated API client from OpenAPI specification
 - `types/api.ts` - Auto-generated TypeScript types from OpenAPI spec
+
+### API Configuration Management
+
+**Centralized Configuration System:**
+The application features a comprehensive API configuration management system that allows users to manage multiple AI model configurations with secure key storage and connection testing.
+
+**Key Features:**
+- **Encrypted Key Storage**: All API keys are encrypted before storage using AES-256-GCM encryption
+- **Multi-Configuration Support**: Users can create, manage, and switch between multiple API configurations
+- **Connection Testing**: Built-in connection testing for all enabled AI models before activation
+- **Initial Setup Wizard**: Guided setup process for first-time users with purchase information integration
+- **Configuration Validation**: Comprehensive validation of API endpoints, model names, and key formats
+
+**Configuration Flow:**
+1. **First-Time Setup**: InitialSetupWizard guides users through API key acquisition and configuration
+2. **Configuration Creation**: Users can create multiple configurations with different settings
+3. **Connection Testing**: System tests connectivity to all enabled models before activation
+4. **Configuration Activation**: Only validated configurations can be set as active
+5. **Runtime Integration**: Active configuration dynamically provides API keys to AI services
+
+**Security Features:**
+- **Key Encryption**: API keys encrypted with rotating encryption keys
+- **Masked Display**: Keys displayed in masked format (sk-...****...xyz) for security
+- **No Plain Text Storage**: Keys never stored or logged in plain text
+- **Secure Transmission**: All API operations use encrypted HTTPS connections
+
 
 ### AI Processing Pipeline
 
@@ -272,6 +310,8 @@ Each refinement operation updates session context, allowing AI to maintain consi
 - SQL files in `backend/migrations/` executed in order
 - Migration 001: Initial schema with 5-table design
 - Migration 002: Enhanced job tracking with retry mechanism
+- Migration 003: API configuration management with encrypted key storage
+- Migration 004: PostgreSQL type consistency fixes for job status updates
 - Automatic migration execution when `RUN_MIGRATIONS=true`
 
 **File Cleanup:** 
@@ -285,6 +325,30 @@ Each refinement operation updates session context, allowing AI to maintain consi
 - Auto-generated types from OpenAPI specification
 - Type safety across frontend-backend boundary
 - Development-friendly error handling
+
+**Common Development Issues & Solutions:**
+
+**PostgreSQL Type Consistency:**
+- Issue: `inconsistent types deduced for parameter` errors in job status updates
+- Solution: Migration 004 ensures proper VARCHAR/TEXT type handling
+- Prevention: Always validate SQL parameter types match database schema
+
+**String Escape Issues:**
+- Issue: `Expecting Unicode escape sequence \uXXXX` in React components
+- Solution: Replace `\"` with `"` in JSX string attributes
+- Prevention: Use consistent quote escaping in template literals
+
+**API Configuration Issues:**
+- Issue: Initial setup fails with UUID format errors
+- Solution: Ensure proper UUID format in database queries
+- Prevention: Validate UUIDs before database operations
+
+**Development Workflow:**
+1. Run `pnpm run install:all` after git pull
+2. Check `.env` file exists and has required variables
+3. Start backend first: `pnpm run dev:backend`
+4. Start frontend: `pnpm run dev:frontend`
+5. Access application at http://localhost:3000
 
 ### Production Readiness
 

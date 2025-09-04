@@ -79,10 +79,65 @@ export class JobModel {
   }
 
   async updateStatus(id: string, status: Job['status'], error_msg?: string, model_used?: string): Promise<Job> {
-    const result = await db.query(
-      'UPDATE jobs SET status = $1, error_msg = $2, model_used = COALESCE($3, model_used), last_error = CASE WHEN $1 IN (\'error\', \'failed\') THEN $2 ELSE last_error END WHERE id = $4 RETURNING *',
-      [status, error_msg, model_used, id]
-    );
+    // 输入验证
+    if (!id || typeof id !== 'string') {
+      throw new Error('Invalid job ID provided');
+    }
+    
+    if (!status || typeof status !== 'string') {
+      throw new Error('Invalid status provided');
+    }
+    
+    // 验证状态值
+    const validStatuses = ['pending', 'queued', 'running', 'done', 'error', 'failed'];
+    if (!validStatuses.includes(status)) {
+      throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
+    }
+    
+    // 确保model_used参数不超过VARCHAR(50)限制
+    const safeModelUsed = model_used && model_used.length > 50 ? model_used.substring(0, 50) : model_used;
+    
+    // 确保error_msg不会过长
+    const safeErrorMsg = error_msg && error_msg.length > 1000 ? error_msg.substring(0, 1000) : error_msg;
+    
+    // 先处理last_error字段的更新
+    let lastErrorValue: string | null = null;
+    if (status === 'error' || status === 'failed') {
+      lastErrorValue = safeErrorMsg || null;
+    }
+    
+    let query: string;
+    let params: any[];
+    
+    if (safeModelUsed !== undefined) {
+      // 当提供model_used时
+      query = `
+        UPDATE jobs 
+        SET status = $1, 
+            error_msg = $2, 
+            model_used = $3,
+            last_error = COALESCE($4, last_error)
+        WHERE id = $5 
+        RETURNING *
+      `;
+      params = [status, safeErrorMsg || null, safeModelUsed, lastErrorValue, id];
+    } else {
+      // 当不提供model_used时，保持原值
+      query = `
+        UPDATE jobs 
+        SET status = $1, 
+            error_msg = $2,
+            last_error = COALESCE($3, last_error)
+        WHERE id = $4 
+        RETURNING *
+      `;
+      params = [status, safeErrorMsg || null, lastErrorValue, id];
+    }
+    
+    const result = await db.query(query, params);
+    if (result.rows.length === 0) {
+      throw new Error(`Job with ID ${id} not found`);
+    }
     return result.rows[0];
   }
 

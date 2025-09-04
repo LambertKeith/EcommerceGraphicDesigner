@@ -21,6 +21,7 @@ import sessionRoutes from './routes/session';
 import jobRoutes from './routes/job';
 import imageRoutes from './routes/image';
 import editRoutes from './routes/edit';
+import configRoutes from './routes/config';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -50,6 +51,7 @@ app.use('/api/session', sessionRoutes);
 app.use('/api/job', jobRoutes);
 app.use('/api/image', imageRoutes);
 app.use('/api/edit', editRoutes);
+app.use('/api/config', configRoutes);
 
 // Health and version endpoints
 app.get('/api/health', (req, res) => {

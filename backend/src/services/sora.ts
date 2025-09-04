@@ -43,8 +43,8 @@ export interface PromptTemplate {
 export class SoraService extends AIService {
   private rateLimitDelay: number = 15000; // Longer delay for creative processing
 
-  constructor() {
-    const config: AIModelConfig = {
+  constructor(config?: AIModelConfig) {
+    const defaultConfig: AIModelConfig = {
       name: 'Sora Image',
       apiKey: process.env.GOOGLE_API_KEY || '', // Using same API key for now
       apiUrl: process.env.GEMINI_API_URL || 'https://api.laozhang.ai/v1/chat/completions',
@@ -54,7 +54,7 @@ export class SoraService extends AIService {
       timeout: 300000 // 5 minutes timeout for creative processing
     };
     
-    super(config);
+    super(config || defaultConfig);
   }
 
   async processImage(imagePath: string, options: ProcessImageOptions): Promise<ProcessImageResult> {

@@ -2,15 +2,46 @@ import { AIService, AIModelType, AIModelInfo } from './aiService';
 import { GeminiService } from './gemini';
 import { ChatGPTService } from './chatgpt';
 import { SoraService } from './sora';
+import { apiConfigService, ApiConfigurationWithKey } from './apiConfigService';
 
 export class AIServiceFactory {
   private static services: Map<AIModelType, AIService> = new Map();
   private static availableModels: Set<AIModelType> = new Set();
+  private static currentConfig: ApiConfigurationWithKey | null = null;
+  private static configLoadedAt: Date | null = null;
+  private static readonly CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
 
-  // Initialize available models based on environment configuration
+  // Initialize available models based on database configuration
   static {
+    this.initializeModels().catch(error => {
+      // Initialize silently on startup, proper logging will occur during configuration loading
+      this.initializeFromEnvironment();
+    });
+  }
+
+  /**
+   * Initialize models from database configuration
+   */
+  private static async initializeModels(): Promise<void> {
     try {
-      // Check which models are configured
+      await this.loadConfiguration();
+      if (this.currentConfig) {
+        console.log('AI模型已从数据库配置初始化');
+      }
+    } catch (error) {
+      // Silent fallback during initialization
+      this.initializeFromEnvironment();
+    }
+  }
+
+  /**
+   * Fallback initialization from environment variables
+   */
+  private static initializeFromEnvironment(): void {
+    try {
+      this.availableModels.clear();
+      
+      // Check which models are configured via environment
       if (process.env.GEMINI_MODEL && process.env.GOOGLE_API_KEY) {
         this.availableModels.add('gemini');
       }
@@ -23,23 +54,84 @@ export class AIServiceFactory {
         this.availableModels.add('sora');
       }
 
-      console.log('Available AI models:', Array.from(this.availableModels));
+      if (this.availableModels.size > 0) {
+        console.log('AI模型已从环境变量配置初始化:', Array.from(this.availableModels));
+      }
     } catch (error) {
-      console.error('Error initializing AI models:', error);
+      console.error('Error initializing AI models from environment:', error);
+    }
+  }
+
+  /**
+   * Load configuration from database
+   */
+  private static async loadConfiguration(): Promise<void> {
+    try {
+      // Check if we need to refresh the configuration
+      const now = new Date();
+      if (this.currentConfig && this.configLoadedAt && 
+          (now.getTime() - this.configLoadedAt.getTime()) < this.CONFIG_CACHE_TTL) {
+        return; // Use cached configuration
+      }
+
+      const config = await apiConfigService.getActiveConfiguration();
+      
+      if (!config) {
+        // This is normal for initial setup, not an error
+        this.currentConfig = null;
+        this.availableModels.clear();
+        return;
+      }
+
+      this.currentConfig = config;
+      this.configLoadedAt = now;
+      
+      // Update available models based on configuration
+      this.availableModels.clear();
+      
+      if (config.gemini_enabled && config.gemini_model) {
+        this.availableModels.add('gemini');
+      }
+      
+      if (config.chatgpt_enabled && config.chatgpt_model) {
+        this.availableModels.add('chatgpt');
+      }
+      
+      if (config.sora_enabled && config.sora_model) {
+        this.availableModels.add('sora');
+      }
+
+      console.log('已更新可用AI模型:', Array.from(this.availableModels));
+      
+      // Clear service cache to force recreation with new configuration
+      this.services.clear();
+    } catch (error) {
+      // Only log as error if we have a database connection but configuration loading fails
+      if (error instanceof Error && !error.message.includes('relation "api_configurations" does not exist')) {
+        console.error('数据库API配置加载失败:', error.message);
+      }
+      throw error;
     }
   }
 
   /**
    * Get an AI service instance for the specified model
    */
-  static getService(modelType: AIModelType): AIService {
+  static async getService(modelType: AIModelType): Promise<AIService> {
+    // Ensure we have the latest configuration
+    await this.loadConfiguration();
+    
     if (!this.availableModels.has(modelType)) {
-      throw new Error(`Model ${modelType} is not available or not configured. Available models: ${Array.from(this.availableModels).join(', ')}`);
+      if (this.availableModels.size === 0) {
+        throw new Error(`请先配置API密钥才能使用AI模型。访问设置页面进行配置。`);
+      } else {
+        throw new Error(`模型 ${modelType} 不可用或未配置。可用模型: ${Array.from(this.availableModels).join(', ')}`);
+      }
     }
 
     // Use singleton pattern for service instances
     if (!this.services.has(modelType)) {
-      this.services.set(modelType, this.createService(modelType));
+      this.services.set(modelType, await this.createService(modelType));
     }
 
     const service = this.services.get(modelType);
@@ -51,9 +143,58 @@ export class AIServiceFactory {
   }
 
   /**
-   * Create a new service instance
+   * Create a new service instance with dynamic configuration
    */
-  private static createService(modelType: AIModelType): AIService {
+  private static async createService(modelType: AIModelType): Promise<AIService> {
+    // Ensure we have current configuration
+    await this.loadConfiguration();
+    
+    if (!this.currentConfig) {
+      // Fallback to environment-based service creation
+      return this.createServiceFromEnvironment(modelType);
+    }
+
+    // Create service with database configuration
+    switch (modelType) {
+      case 'gemini':
+        return new GeminiService({
+          name: 'Gemini 2.5 Flash',
+          apiKey: this.currentConfig.api_key,
+          apiUrl: this.currentConfig.base_url,
+          model: this.currentConfig.gemini_model,
+          maxRetries: 3,
+          retryDelay: 2000,
+          timeout: 120000
+        });
+      case 'chatgpt':
+        return new ChatGPTService({
+          name: 'ChatGPT Vision',
+          apiKey: this.currentConfig.api_key,
+          apiUrl: this.currentConfig.base_url,
+          model: this.currentConfig.chatgpt_model,
+          maxRetries: 3,
+          retryDelay: 2000,
+          timeout: 120000
+        });
+      case 'sora':
+        return new SoraService({
+          name: 'Sora Image',
+          apiKey: this.currentConfig.api_key,
+          apiUrl: this.currentConfig.base_url,
+          model: this.currentConfig.sora_model,
+          maxRetries: 3,
+          retryDelay: 2000,
+          timeout: 120000
+        });
+      default:
+        throw new Error(`Unsupported model type: ${modelType}`);
+    }
+  }
+
+  /**
+   * Fallback service creation from environment variables
+   */
+  private static createServiceFromEnvironment(modelType: AIModelType): AIService {
     switch (modelType) {
       case 'gemini':
         return new GeminiService();
@@ -69,52 +210,68 @@ export class AIServiceFactory {
   /**
    * Get information about all available models
    */
-  static getAvailableModels(): AIModelInfo[] {
-    const models: AIModelInfo[] = [];
-    
-    for (const modelType of this.availableModels) {
-      try {
-        const service = this.getService(modelType);
-        models.push(service.getModelInfo());
-      } catch (error) {
-        console.error(`Failed to get info for model ${modelType}:`, error);
+  static async getAvailableModels(): Promise<AIModelInfo[]> {
+    try {
+      await this.loadConfiguration();
+      const models: AIModelInfo[] = [];
+      
+      for (const modelType of this.availableModels) {
+        try {
+          const service = await this.getService(modelType);
+          models.push(service.getModelInfo());
+        } catch (error) {
+          console.error(`Failed to get info for model ${modelType}:`, error);
+        }
       }
-    }
 
-    return models;
+      return models;
+    } catch (error) {
+      // Return empty array silently for initial setup state
+      return []; // No configuration available - this is normal for initial setup
+    }
   }
 
   /**
    * Check if a model is available
    */
-  static isModelAvailable(modelType: AIModelType): boolean {
+  static async isModelAvailable(modelType: AIModelType): Promise<boolean> {
+    await this.loadConfiguration();
     return this.availableModels.has(modelType);
   }
 
   /**
    * Get the default model (prioritize Gemini, then ChatGPT, then Sora)
    */
-  static getDefaultModel(): AIModelType {
-    const priority: AIModelType[] = ['gemini', 'chatgpt', 'sora'];
-    
-    for (const modelType of priority) {
-      if (this.availableModels.has(modelType)) {
-        return modelType;
+  static async getDefaultModel(): Promise<AIModelType> {
+    try {
+      await this.loadConfiguration();
+      const priority: AIModelType[] = ['gemini', 'chatgpt', 'sora'];
+      
+      for (const modelType of priority) {
+        if (this.availableModels.has(modelType)) {
+          return modelType;
+        }
       }
-    }
 
-    throw new Error('No AI models are available. Please check your configuration.');
+      throw new Error('请先配置API密钥才能使用AI模型。访问设置页面进行配置。');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Please configure your API settings first')) {
+        throw error; // Re-throw configuration-specific errors
+      }
+      throw new Error('没有可用的AI模型。请检查您的配置设置。');
+    }
   }
 
   /**
    * Test connection for all available models
    */
   static async testAllConnections(): Promise<Record<AIModelType, { success: boolean; error?: string }>> {
+    await this.loadConfiguration();
     const results: Record<string, { success: boolean; error?: string }> = {};
     
     for (const modelType of this.availableModels) {
       try {
-        const service = this.getService(modelType);
+        const service = await this.getService(modelType);
         results[modelType] = await service.testConnection();
       } catch (error) {
         results[modelType] = {
@@ -132,7 +289,7 @@ export class AIServiceFactory {
    */
   static async testConnection(modelType: AIModelType): Promise<{ success: boolean; error?: string }> {
     try {
-      const service = this.getService(modelType);
+      const service = await this.getService(modelType);
       return await service.testConnection();
     } catch (error) {
       return {
@@ -203,13 +360,14 @@ export class AIServiceFactory {
   /**
    * Get all models sorted by suitability for a specific task
    */
-  static getModelsByTaskSuitability(taskType: 'optimize' | 'edit' | 'refine'): Array<{
+  static async getModelsByTaskSuitability(taskType: 'optimize' | 'edit' | 'refine'): Promise<Array<{
     model: AIModelType;
     score: number;
     available: boolean;
     capabilities: any;
     reason: string;
-  }> {
+  }>> {
+    await this.loadConfiguration();
     const requirements = this.TASK_REQUIREMENTS[taskType];
     const results: Array<{
       model: AIModelType;
@@ -221,7 +379,7 @@ export class AIServiceFactory {
 
     for (const [modelType, capabilities] of Object.entries(this.CAPABILITY_MATRIX)) {
       const model = modelType as AIModelType;
-      const available = this.isModelAvailable(model);
+      const available = await this.isModelAvailable(model);
       
       // Calculate suitability score
       let score = 0;
@@ -269,15 +427,17 @@ export class AIServiceFactory {
   /**
    * Get recommended model for a specific task with intelligent fallback
    */
-  static getRecommendedModel(taskType: 'optimize' | 'edit' | 'refine', userPreference?: AIModelType): AIModelType {
+  static async getRecommendedModel(taskType: 'optimize' | 'edit' | 'refine', userPreference?: AIModelType): Promise<AIModelType> {
+    await this.loadConfiguration();
+    
     // If user has a preference and it's available, use it
-    if (userPreference && this.isModelAvailable(userPreference)) {
+    if (userPreference && await this.isModelAvailable(userPreference)) {
       console.log(`Using user preferred model: ${userPreference} for ${taskType}`);
       return userPreference;
     }
 
     // Get models ranked by suitability
-    const rankedModels = this.getModelsByTaskSuitability(taskType);
+    const rankedModels = await this.getModelsByTaskSuitability(taskType);
     
     // Find the best available model
     const bestAvailableModel = rankedModels.find(model => model.available);
@@ -289,7 +449,7 @@ export class AIServiceFactory {
 
     // Emergency fallback to default model
     console.warn(`No suitable models available for ${taskType}, falling back to default model`);
-    return this.getDefaultModel();
+    return await this.getDefaultModel();
   }
 
   /**
@@ -307,10 +467,11 @@ export class AIServiceFactory {
     fallbackChain?: string[];
     error?: string;
   }> {
-    const rankedModels = this.getModelsByTaskSuitability(taskType)
-      .filter(model => model.available);
+    await this.loadConfiguration();
+    const rankedModels = await this.getModelsByTaskSuitability(taskType);
+    const availableModels = rankedModels.filter(model => model.available);
 
-    if (rankedModels.length === 0) {
+    if (availableModels.length === 0) {
       return {
         success: false,
         error: 'No models available for processing'
@@ -321,8 +482,8 @@ export class AIServiceFactory {
     let lastError: string = '';
 
     // Try user preference first if provided and available
-    if (userPreference && this.isModelAvailable(userPreference)) {
-      rankedModels.unshift({
+    if (userPreference && await this.isModelAvailable(userPreference)) {
+      availableModels.unshift({
         model: userPreference,
         score: 999, // Highest priority
         available: true,
@@ -331,7 +492,7 @@ export class AIServiceFactory {
       });
     }
 
-    for (const modelInfo of rankedModels) {
+    for (const modelInfo of availableModels) {
       const model = modelInfo.model;
       fallbackChain.push(model);
       
@@ -340,7 +501,7 @@ export class AIServiceFactory {
         try {
           console.log(`Attempting processing with ${model} (attempt ${retryCount + 1}/${maxRetries})`);
           
-          const service = this.getService(model);
+          const service = await this.getService(model);
           const result = await processingFunction(service);
           
           console.log(`Successfully processed with ${model} after ${retryCount + 1} attempts`);
@@ -386,7 +547,7 @@ export class AIServiceFactory {
   /**
    * Get model statistics
    */
-  static getModelStats(): {
+  static async getModelStats(): Promise<{
     total: number;
     available: number;
     configured: number;
@@ -395,7 +556,8 @@ export class AIServiceFactory {
       available: boolean;
       info?: AIModelInfo;
     }>;
-  } {
+  }> {
+    await this.loadConfiguration();
     const allModels: AIModelType[] = ['gemini', 'chatgpt', 'sora'];
     const stats = {
       total: allModels.length,
@@ -405,7 +567,7 @@ export class AIServiceFactory {
     };
 
     for (const modelType of allModels) {
-      const isConfigured = this.isModelConfigured(modelType);
+      const isConfigured = await this.isModelConfigured(modelType);
       const isAvailable = this.availableModels.has(modelType);
       
       if (isConfigured) stats.configured++;
@@ -417,7 +579,8 @@ export class AIServiceFactory {
 
       if (isAvailable) {
         try {
-          stats.models[modelType].info = this.getService(modelType).getModelInfo();
+          const service = await this.getService(modelType);
+          stats.models[modelType].info = service.getModelInfo();
         } catch (error) {
           console.error(`Failed to get info for ${modelType}:`, error);
         }
@@ -428,9 +591,24 @@ export class AIServiceFactory {
   }
 
   /**
-   * Check if a model is configured (has required environment variables)
+   * Check if a model is configured
    */
-  private static isModelConfigured(modelType: AIModelType): boolean {
+  private static async isModelConfigured(modelType: AIModelType): Promise<boolean> {
+    await this.loadConfiguration();
+    
+    // First check database configuration
+    if (this.currentConfig) {
+      switch (modelType) {
+        case 'gemini':
+          return this.currentConfig.gemini_enabled && !!this.currentConfig.gemini_model;
+        case 'chatgpt':
+          return this.currentConfig.chatgpt_enabled && !!this.currentConfig.chatgpt_model;
+        case 'sora':
+          return this.currentConfig.sora_enabled && !!this.currentConfig.sora_model;
+      }
+    }
+    
+    // Fallback to environment variables
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) return false;
 
@@ -447,38 +625,67 @@ export class AIServiceFactory {
   }
 
   /**
+   * Force refresh configuration from database
+   */
+  static async refreshConfiguration(): Promise<void> {
+    console.log('Forcing configuration refresh from database...');
+    
+    // Clear cache
+    this.currentConfig = null;
+    this.configLoadedAt = null;
+    this.services.clear();
+    
+    // Reload configuration
+    try {
+      await this.loadConfiguration();
+      console.log('Configuration refreshed successfully');
+    } catch (error) {
+      console.error('Failed to refresh configuration:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Clear service cache (useful for testing or configuration changes)
    */
   static clearCache(): void {
     this.services.clear();
+    this.currentConfig = null;
+    this.configLoadedAt = null;
   }
 
   /**
-   * Refresh available models (useful after configuration changes)
+   * Refresh available models (alias for refreshConfiguration)
    */
-  static refreshModels(): void {
-    this.availableModels.clear();
-    this.services.clear();
-    
-    // Re-initialize
-    if (process.env.GEMINI_MODEL && process.env.GOOGLE_API_KEY) {
-      this.availableModels.add('gemini');
-    }
-    
-    if (process.env.CHATGPT_MODEL && process.env.GOOGLE_API_KEY) {
-      this.availableModels.add('chatgpt');
-    }
-    
-    if (process.env.SORA_MODEL && process.env.GOOGLE_API_KEY) {
-      this.availableModels.add('sora');
-    }
+  static async refreshModels(): Promise<void> {
+    await this.refreshConfiguration();
+  }
 
-    console.log('Refreshed available AI models:', Array.from(this.availableModels));
+  /**
+   * Get current configuration summary (for debugging)
+   */
+  static async getConfigurationSummary(): Promise<{
+    source: 'database' | 'environment' | 'none';
+    config_name?: string;
+    available_models: AIModelType[];
+    cached_at?: Date;
+    cache_expires_at?: Date;
+  }> {
+    await this.loadConfiguration();
+    
+    return {
+      source: this.currentConfig ? 'database' : (process.env.GOOGLE_API_KEY ? 'environment' : 'none'),
+      config_name: this.currentConfig?.name,
+      available_models: Array.from(this.availableModels),
+      cached_at: this.configLoadedAt || undefined,
+      cache_expires_at: this.configLoadedAt ? 
+        new Date(this.configLoadedAt.getTime() + this.CONFIG_CACHE_TTL) : undefined
+    };
   }
 }
 
-// Legacy exports for backward compatibility
-export const geminiService = AIServiceFactory.getService('gemini');
+// Note: Legacy exports removed due to async nature of new getService method
+// Use AIServiceFactory.getService(modelType) directly instead
 
 // Export the factory as default
 export default AIServiceFactory;

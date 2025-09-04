@@ -62,10 +62,11 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json(response);
       }
       
-      if (!AIServiceFactory.isModelAvailable(model)) {
+      if (!(await AIServiceFactory.isModelAvailable(model))) {
+        const availableModels = await AIServiceFactory.getAvailableModels();
         const response: ApiResponse = {
           success: false,
-          error: `Model '${model}' is not available. Available models: ${AIServiceFactory.getAvailableModels().map(m => m.id).join(', ')}`
+          error: `Model '${model}' is not available. Available models: ${availableModels.map(m => m.id).join(', ')}`
         };
         return res.status(400).json(response);
       }
@@ -73,7 +74,7 @@ router.post('/', async (req, res, next) => {
       selectedModel = model;
     } else {
       // Use recommended model based on task type
-      selectedModel = AIServiceFactory.getRecommendedModel(type as any);
+      selectedModel = await AIServiceFactory.getRecommendedModel(type as any);
     }
 
     const session = await sessionModel.findById(session_id);
@@ -101,9 +102,13 @@ router.post('/', async (req, res, next) => {
       prompt,
       context: session.context_json,
       model: selectedModel
-    }).catch(error => {
+    }).catch(async error => {
       console.error('Async processing error:', error);
-      jobModel.updateStatus(job.id, 'error', error.message, selectedModel);
+      try {
+        await jobModel.updateStatus(job.id, 'error', error?.message || 'Async processing failed', selectedModel);
+      } catch (updateError) {
+        console.error('Failed to update job status after async processing error:', updateError);
+      }
     });
 
     const response: ApiResponse = {
@@ -129,7 +134,7 @@ async function processImageAsync(jobId: string, imagePath: string, options: any)
     await jobModel.updateStatus(jobId, 'running', undefined, selectedModel);
     
     // Get the appropriate AI service
-    const aiService = AIServiceFactory.getService(selectedModel);
+    const aiService = await AIServiceFactory.getService(selectedModel);
     const result = await aiService.processImage(imagePath, {
       type: options.type,
       prompt: options.prompt,
@@ -272,7 +277,7 @@ router.post('/refine', async (req, res, next) => {
     }
 
     // Get recommended model for refine operation
-    const selectedModel = AIServiceFactory.getRecommendedModel('refine');
+    const selectedModel = await AIServiceFactory.getRecommendedModel('refine');
     
     const job = await jobModel.create(session_id, image.id, 'refine', instructions, selectedModel);
     
@@ -295,9 +300,13 @@ router.post('/refine', async (req, res, next) => {
       prompt: instructions,
       context: updatedContext,
       model: selectedModel
-    }).catch(error => {
+    }).catch(async (error) => {
       console.error('Async refine processing error:', error);
-      jobModel.updateStatus(job.id, 'error', error.message, selectedModel);
+      try {
+        await jobModel.updateStatus(job.id, 'error', error?.message || 'Refine processing failed', selectedModel);
+      } catch (updateError) {
+        console.error('Failed to update job status after async refine processing error:', updateError);
+      }
     });
 
     const response: ApiResponse = {
@@ -314,26 +323,49 @@ router.post('/refine', async (req, res, next) => {
 // Get available AI models
 router.get('/models', async (req, res, next) => {
   try {
-    const models = AIServiceFactory.getAvailableModels();
-    const defaultModel = AIServiceFactory.getDefaultModel();
+    const models = await AIServiceFactory.getAvailableModels();
+    
+    let defaultModel: string | null = null;
+    try {
+      defaultModel = await AIServiceFactory.getDefaultModel();
+    } catch (error) {
+      // It's normal to not have a default model when no configuration exists
+      if (error instanceof Error && error.message.includes('请先配置API密钥')) {
+        // This is normal for initial setup, log as info instead of warning
+        console.info('用户需要配置API密钥以使用AI模型');
+      } else if (error instanceof Error && error.message.includes('没有可用的AI模型')) {
+        // This is also normal for initial setup
+        console.info('系统尚未配置，请访问设置页面进行API配置');
+      } else {
+        console.warn('获取默认模型时发生错误:', error instanceof Error ? error.message : error);
+      }
+    }
     
     const response: ApiResponse = {
       success: true,
       data: {
         models,
         default: defaultModel,
-        total: models.length
+        total: models.length,
+        configured: models.length > 0
       }
     };
     
     res.json(response);
   } catch (error) {
-    console.error('Failed to get available models:', error);
+    // Return empty models list instead of error when not configured
     const response: ApiResponse = {
-      success: false,
-      error: 'Failed to get available models'
+      success: true,
+      data: {
+        models: [],
+        default: null,
+        total: 0,
+        configured: false,
+        message: '未找到API配置。请先在设置页面配置您的API密钥。'
+      }
     };
-    res.status(500).json(response);
+    
+    res.json(response);
   }
 });
 
@@ -362,10 +394,10 @@ router.post('/models/:model/test', async (req, res, next) => {
     
     res.json(response);
   } catch (error) {
-    console.error('Model connection test failed:', error);
+    console.error('模型连接测试失败:', error);
     const response: ApiResponse = {
       success: false,
-      error: error instanceof Error ? error.message : 'Connection test failed'
+      error: error instanceof Error ? error.message : '连接测试失败'
     };
     res.status(500).json(response);
   }

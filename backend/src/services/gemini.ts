@@ -37,8 +37,8 @@ export interface PromptTemplate {
 export class GeminiService extends AIService {
   private rateLimitDelay: number = 10000;
 
-  constructor() {
-    const config: AIModelConfig = {
+  constructor(config?: AIModelConfig) {
+    const defaultConfig: AIModelConfig = {
       name: 'Gemini 2.5 Flash',
       apiKey: process.env.GOOGLE_API_KEY || '',
       apiUrl: process.env.GEMINI_API_URL || 'https://api.laozhang.ai/v1/chat/completions',
@@ -48,7 +48,7 @@ export class GeminiService extends AIService {
       timeout: 120000
     };
     
-    super(config);
+    super(config || defaultConfig);
   }
 
   async processImage(imagePath: string, options: ProcessImageOptions): Promise<ProcessImageResult> {

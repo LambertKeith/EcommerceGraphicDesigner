@@ -43,8 +43,8 @@ export interface PromptTemplate {
 export class ChatGPTService extends AIService {
   private rateLimitDelay: number = 10000;
 
-  constructor() {
-    const config: AIModelConfig = {
+  constructor(config?: AIModelConfig) {
+    const defaultConfig: AIModelConfig = {
       name: 'ChatGPT Vision',
       apiKey: process.env.GOOGLE_API_KEY || '', // Using same API key for now
       apiUrl: process.env.GEMINI_API_URL || 'https://api.laozhang.ai/v1/chat/completions',
@@ -54,7 +54,7 @@ export class ChatGPTService extends AIService {
       timeout: 180000 // 3 minutes timeout for ChatGPT (higher quality processing)
     };
     
-    super(config);
+    super(config || defaultConfig);
   }
 
   async processImage(imagePath: string, options: ProcessImageOptions): Promise<ProcessImageResult> {
