@@ -1,13 +1,17 @@
 import { useState } from 'react';
-import { Upload, Wand2, Sparkles, Zap, Star, ArrowRight } from 'lucide-react';
+import { Upload, Wand2, Sparkles, Zap, Star, ArrowRight, Image as ImageIcon, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ImageUpload from './components/ImageUpload';
 import ImageEditor from './components/ImageEditor';
+import TextToImageGenerator from './components/TextToImageGenerator';
 import AppConfigWrapper from './components/AppConfigWrapper';
 import { useAppStore } from './stores/appStore';
 
+type ViewMode = 'home' | 'edit' | 'generate';
+
 function App() {
   const { currentImage } = useAppStore();
+  const [viewMode, setViewMode] = useState<ViewMode>('home');
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -78,6 +82,42 @@ function App() {
                   </h1>
                 </motion.div>
 
+                {/* Navigation */}
+                <motion.nav
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.1 }}
+                  className="flex items-center space-x-1"
+                >
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('home')}
+                    className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-all ${
+                      viewMode === 'home'
+                        ? 'bg-white/20 text-white border border-white/30'
+                        : 'text-white/70 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Upload className="h-4 w-4" />
+                    <span className="text-sm font-medium">图像编辑</span>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('generate')}
+                    className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-all ${
+                      viewMode === 'generate'
+                        ? 'bg-white/20 text-white border border-white/30'
+                        : 'text-white/70 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Palette className="h-4 w-4" />
+                    <span className="text-sm font-medium">文生图</span>
+                  </motion.button>
+                </motion.nav>
+
                 <motion.div
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -93,7 +133,28 @@ function App() {
 
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <AnimatePresence mode="wait">
-              {!currentImage ? (
+              {viewMode === 'generate' ? (
+                <motion.div
+                  key="generate"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.6 }}
+                >
+                  <TextToImageGenerator />
+                </motion.div>
+              ) : viewMode === 'edit' || currentImage ? (
+                <motion.div
+                  key="editor"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.6 }}
+                  className="py-8"
+                >
+                  <ImageEditor />
+                </motion.div>
+              ) : (
                 <motion.div
                   key="upload"
                   variants={containerVariants}
@@ -210,17 +271,6 @@ function App() {
                       ))}
                     </div>
                   </motion.div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="editor"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.6 }}
-                  className="py-8"
-                >
-                  <ImageEditor />
                 </motion.div>
               )}
             </AnimatePresence>

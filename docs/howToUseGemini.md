@@ -60,3 +60,19 @@
 
 
 '''
+
+
+'''curl
+
+    curl https://api.laozhang.ai/v1/images/generations \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_API_KEY_HERE" \
+    -d '{
+        "model": "gemini-2.5-flash-image-preview",
+        "prompt": "A cute baby sea otter",
+        "n": 1,
+        "size": "1024x1024"
+    }'
+
+
+'''

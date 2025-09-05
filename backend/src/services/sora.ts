@@ -5,6 +5,8 @@ import {
   AIService, 
   ProcessImageOptions, 
   ProcessImageResult, 
+  GenerateImageOptions,
+  GenerateImageResult,
   AIModelConfig, 
   AIModelInfo, 
   AIModelType 
@@ -32,6 +34,19 @@ export interface SoraResponse {
     message: string;
     type: string;
     code: string;
+  };
+}
+
+export interface SoraGenerationResponse {
+  data?: Array<{
+    url?: string;
+    b64_json?: string;
+    revised_prompt?: string;
+  }>;
+  error?: {
+    message: string;
+    type?: string;
+    code?: string;
   };
 }
 
@@ -328,12 +343,178 @@ export class SoraService extends AIService {
     return null;
   }
 
+  async generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
+    try {
+      const enhancedPrompt = this.buildGenerationPrompt(options);
+      
+      console.log('Generating creative image with Sora...');
+      console.log('Enhanced prompt:', enhancedPrompt);
+      
+      // Generate image using Sora image generation API
+      const generatedImage = await this.callSoraGenerationAPI(enhancedPrompt, options.size || '1024x1024');
+      
+      if (!generatedImage) {
+        throw new Error('Failed to generate image');
+      }
+
+      return {
+        success: true,
+        imageBuffer: generatedImage,
+        metadata: {
+          prompt: enhancedPrompt,
+          originalPrompt: options.prompt,
+          style: options.style,
+          size: options.size || '1024x1024',
+          model: this.config.model,
+          generation_method: 'sora_creative_image'
+        }
+      };
+      
+    } catch (error) {
+      console.error('Sora image generation error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  }
+
+  private buildGenerationPrompt(options: GenerateImageOptions): string {
+    let prompt = options.prompt;
+    
+    // Apply creative style enhancement
+    if (options.style) {
+      const styleEnhancements = this.getCreativeStyleEnhancements(options.style);
+      prompt = `${prompt}, ${styleEnhancements}`;
+    }
+    
+    // Add creative quality guidelines
+    const qualityEnhancement = `
+Create a creative, visually striking image with artistic flair.
+The image should be:
+- Artistically compelling with unique visual elements
+- Creative composition with interesting perspective
+- Rich colors and dynamic lighting
+- Suitable for artistic or creative commercial use
+- Innovative and visually engaging
+
+Original request: ${prompt}
+
+Generate a creative, high-impact image with artistic excellence.`;
+
+    return qualityEnhancement;
+  }
+
+  private getCreativeStyleEnhancements(style: string): string {
+    const styleMap: Record<string, string> = {
+      'commercial': 'creative commercial approach, artistic product presentation, innovative marketing aesthetic',
+      'artistic': 'bold artistic vision, creative expression, unique artistic interpretation',
+      'minimal': 'creative minimalism, artistic simplicity, elegant creative design',
+      'realistic': 'creative realism, artistic photography style, enhanced natural beauty',
+      'vibrant': 'bold creative colors, dynamic artistic composition, visually impactful'
+    };
+    
+    return styleMap[style] || styleMap['artistic'];
+  }
+
+  private async callSoraGenerationAPI(prompt: string, size: string): Promise<Buffer | null> {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.config.apiKey}`,
+    };
+
+    const payload = {
+      model: this.config.model,
+      prompt: prompt,
+      n: 1,
+      size: size
+    };
+
+    // Use image generation endpoint
+    const generationUrl = this.config.apiUrl.replace('/chat/completions', '/images/generations');
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        console.log(`Calling Sora Generation API (attempt ${attempt}/${this.maxRetries})`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+        const response = await fetch(generationUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = this.parseAPIError(response.status, errorText);
+          
+          if (response.status === 429) {
+            console.log(`Rate limited, waiting ${this.rateLimitDelay}ms before retry`);
+            await this.sleep(this.rateLimitDelay);
+            continue;
+          } else if (response.status >= 500) {
+            console.log(`Server error (${response.status}), retrying...`);
+            throw new Error(error.message);
+          } else if (response.status === 401 || response.status === 403) {
+            throw new Error(`Authentication error: ${error.message}. Please check your API key.`);
+          } else {
+            throw new Error(error.message);
+          }
+        }
+
+        const result = await response.json() as SoraGenerationResponse;
+        
+        if (result.error) {
+          throw new Error(`Sora Generation API Error: ${result.error.message}`);
+        }
+
+        // Extract image data from response
+        if (result.data && result.data[0] && result.data[0].url) {
+          const imageUrl = result.data[0].url;
+          const imageResponse = await fetch(imageUrl);
+          
+          if (!imageResponse.ok) {
+            throw new Error('Failed to download generated image');
+          }
+          
+          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+          return imageBuffer;
+        } else if (result.data && result.data[0] && result.data[0].b64_json) {
+          return Buffer.from(result.data[0].b64_json, 'base64');
+        } else {
+          throw new Error('No image data found in API response');
+        }
+
+      } catch (error) {
+        console.error(`Sora Generation API call attempt ${attempt} failed:`, error);
+        
+        if (attempt === this.maxRetries) {
+          if (error instanceof Error && error.message.includes('Authentication error')) {
+            throw error;
+          }
+          throw new Error(`Sora Generation API failed after ${this.maxRetries} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        
+        const delay = this.retryDelay * Math.pow(2, attempt - 1);
+        console.log(`Waiting ${delay}ms before retry...`);
+        await this.sleep(delay);
+      }
+    }
+
+    return null;
+  }
+
   getModelInfo(): AIModelInfo {
     return {
       id: 'sora' as AIModelType,
       name: 'Sora Image',
       description: '高级创意AI模型，专注于艺术创作和视觉创新，第二强处理能力',
-      capabilities: ['创意艺术处理', '风格转换', '视觉创新', '艺术滤镜', '独特效果'],
+      capabilities: ['创意艺术处理', '风格转换', '视觉创新', '艺术滤镜', '独特效果', '创意文生图'],
       speed: 'medium',
       quality: 'premium',
       recommended: ['艺术创作', '创意设计', '风格实验', '视觉艺术', '创新营销图']

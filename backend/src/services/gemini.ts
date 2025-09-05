@@ -5,6 +5,8 @@ import {
   AIService, 
   ProcessImageOptions, 
   ProcessImageResult, 
+  GenerateImageOptions,
+  GenerateImageResult,
   AIModelConfig, 
   AIModelInfo, 
   AIModelType 
@@ -21,6 +23,18 @@ export interface GeminiResponse {
       role: string;
       content: string;
     };
+  }>;
+  error?: {
+    message: string;
+    type: string;
+    code: string;
+  };
+}
+
+export interface GeminiGenerationResponse {
+  data: Array<{
+    url?: string;
+    b64_json?: string;
   }>;
   error?: {
     message: string;
@@ -297,6 +311,337 @@ export class GeminiService extends AIService {
         
         // Progressive backoff
         const delay = this.retryDelay * Math.pow(2, attempt - 1);
+        console.log(`Waiting ${delay}ms before retry...`);
+        await this.sleep(delay);
+      }
+    }
+
+    return null;
+  }
+
+  // 添加文生图功能
+  async generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
+    try {
+      const enhancedPrompt = this.buildGenerationPrompt(options);
+      
+      console.log('Generating image with Gemini...');
+      console.log('Enhanced prompt:', enhancedPrompt);
+      
+      // Try image generation API first, with quick fallback to chat completions
+      let generatedImage: Buffer | null = null;
+      let usedMethod = 'unknown';
+      
+      try {
+        console.log('Attempting Gemini Images Generation API...');
+        generatedImage = await this.callGeminiGenerationAPI(enhancedPrompt, options.size || '1024x1024');
+        usedMethod = 'images_generations';
+        console.log('Images Generation API succeeded');
+      } catch (error) {
+        console.log('Images generation API failed, analyzing error for fallback decision...');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.log('Error details:', errorMessage);
+        
+        // For systematic API issues, immediately fallback to chat completions
+        console.log('Executing fallback to Gemini Chat Completions API...');
+        try {
+          generatedImage = await this.callGeminiChatGenerationAPI(enhancedPrompt);
+          usedMethod = 'chat_completions_fallback';
+          console.log('Chat Completions fallback succeeded');
+        } catch (fallbackError) {
+          console.error('Chat Completions fallback also failed:', fallbackError);
+          throw new Error(`Both Generation API and Chat Completions failed. Original: ${errorMessage}. Fallback: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+        }
+      }
+      
+      if (!generatedImage) {
+        throw new Error('Failed to generate image - no data returned from API');
+      }
+
+      console.log(`Image generation completed using method: ${usedMethod}`);
+      return {
+        success: true,
+        imageBuffer: generatedImage,
+        metadata: {
+          prompt: enhancedPrompt,
+          originalPrompt: options.prompt,
+          style: options.style,
+          size: options.size || '1024x1024',
+          model: this.config.model,
+          generation_method: `gemini_${usedMethod}`
+        }
+      };
+      
+    } catch (error) {
+      console.error('Gemini image generation final error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  }
+
+  private buildGenerationPrompt(options: GenerateImageOptions): string {
+    let prompt = options.prompt;
+    
+    // Add style modifiers if provided
+    if (options.style) {
+      const styleText = this.getStyleText(options.style);
+      prompt += `, ${styleText}`;
+    }
+
+    // Add general e-commerce generation instructions
+    const enhancedPrompt = `
+Create a high-quality, professional image suitable for commercial use.
+The image should be:
+- Clear and well-lit with professional composition
+- Suitable for e-commerce or marketing materials
+- High resolution and sharp details
+- Aesthetically pleasing and market-ready
+
+Original request: ${prompt}
+
+Generate a single, best-quality result that meets commercial standards.`;
+
+    return enhancedPrompt;
+  }
+
+  private getStyleText(style: string): string {
+    const styleMap: Record<string, string> = {
+      'commercial': 'professional product photography, clean background, studio lighting',
+      'artistic': 'creative artistic style, unique composition, artistic flair, visually striking',
+      'minimal': 'minimalist design, clean lines, simple composition, modern aesthetic',
+      'realistic': 'photorealistic, natural lighting, authentic textures, lifelike details',
+      'vibrant': 'bright colors, high contrast, energetic composition, eye-catching visuals'
+    };
+    
+    return styleMap[style] || styleMap['commercial'];
+  }
+
+  private async callGeminiGenerationAPI(prompt: string, size: string): Promise<Buffer | null> {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.config.apiKey}`,
+    };
+
+    const payload = {
+      model: this.config.model,
+      prompt: prompt,
+      n: 1,
+      size: size
+    };
+
+    // Use image generation endpoint
+    const generationUrl = this.config.apiUrl.replace('/chat/completions', '/images/generations');
+    console.log('Calling Generation URL:', generationUrl);
+
+    const maxAttempts = 2; // Quick retry for faster fallback
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`Calling Gemini Generation API (attempt ${attempt}/${maxAttempts})`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+        const response = await fetch(generationUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        console.log(`Generation API response status: ${response.status}`);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log('Generation API error response:', errorText);
+          
+          const error = this.parseAPIError(response.status, errorText);
+          
+          // Handle different error types - be aggressive about non-retryable errors
+          if (response.status === 429) {
+            console.log(`Rate limited, waiting ${this.rateLimitDelay}ms before retry`);
+            await this.sleep(this.rateLimitDelay);
+            continue;
+          } else if (response.status >= 500) {
+            // For systematic server errors, don't retry
+            if (errorText.includes('shell_api_error') || errorText.includes('convert_request_failed')) {
+              console.log(`Systematic server error detected (${response.status}), not retrying`);
+              throw new Error(error.message);
+            }
+            console.log(`Server error (${response.status}), retrying...`);
+            throw new Error(error.message);
+          } else {
+            console.log(`Client error (${response.status}), not retrying`);
+            throw new Error(error.message);
+          }
+        }
+
+        const result = await response.json() as GeminiGenerationResponse;
+        console.log('Generation API response structure:', Object.keys(result));
+        
+        if (result.error) {
+          console.log('API returned error in response:', result.error);
+          throw new Error(`Gemini Generation API Error: ${result.error.message}`);
+        }
+
+        // Extract image data from response
+        if (result.data && result.data[0] && result.data[0].url) {
+          const imageUrl = result.data[0].url;
+          console.log('Fetching generated image from URL:', imageUrl);
+          const imageResponse = await fetch(imageUrl);
+          
+          if (!imageResponse.ok) {
+            throw new Error('Failed to download generated image');
+          }
+          
+          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+          console.log(`Successfully fetched image, size: ${imageBuffer.length} bytes`);
+          return imageBuffer;
+        } else if (result.data && result.data[0] && result.data[0].b64_json) {
+          console.log('Processing base64 image data');
+          return Buffer.from(result.data[0].b64_json, 'base64');
+        } else {
+          console.log('No image data found in API response:', result);
+          throw new Error('No image data found in API response');
+        }
+
+      } catch (error) {
+        console.error(`Generation API call attempt ${attempt} failed:`, error);
+        
+        if (attempt === maxAttempts) {
+          throw new Error(`Gemini Generation API failed after ${maxAttempts} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        
+        // Short delay for faster fallback
+        const delay = Math.min(this.retryDelay * attempt, 3000);
+        console.log(`Waiting ${delay}ms before retry...`);
+        await this.sleep(delay);
+      }
+    }
+
+    return null;
+  }
+
+  private async callGeminiChatGenerationAPI(prompt: string): Promise<Buffer | null> {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.config.apiKey}`,
+    };
+
+    const payload = {
+      model: this.config.model,
+      stream: false,
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI image generator. When asked to create an image, generate a detailed visual representation and return it as a base64-encoded image data URL."
+        },
+        {
+          role: "user",
+          content: `Create an image: ${prompt}`
+        }
+      ]
+    };
+
+    console.log('Calling Chat Completions URL:', this.config.apiUrl);
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`Calling Gemini Chat API for image generation (attempt ${attempt}/${maxAttempts})`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+        const response = await fetch(this.config.apiUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        console.log(`Chat API response status: ${response.status}`);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.log('Chat API error response:', errorText);
+          
+          const error = this.parseAPIError(response.status, errorText);
+          
+          if (response.status === 429) {
+            console.log(`Rate limited, waiting ${this.rateLimitDelay}ms before retry`);
+            await this.sleep(this.rateLimitDelay);
+            continue;
+          } else if (response.status >= 500) {
+            console.log(`Server error (${response.status}), retrying...`);
+            throw new Error(error.message);
+          } else {
+            console.log(`Client error (${response.status}), not retrying`);
+            throw new Error(error.message);
+          }
+        }
+
+        const result = await response.json() as GeminiResponse;
+        console.log('Chat API response structure:', Object.keys(result));
+        
+        if (result.error) {
+          console.log('Chat API returned error in response:', result.error);
+          throw new Error(`Gemini Chat API Error: ${result.error.message}`);
+        }
+
+        if (!result.choices || result.choices.length === 0) {
+          throw new Error('No choices returned from Chat API');
+        }
+
+        const content = result.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('No content in Chat API response');
+        }
+
+        console.log('Chat API returned content length:', content.length);
+
+        // Try to extract base64 image from the response
+        const base64Patterns = [
+          /data:image\/[^;]+;base64,([A-Za-z0-9+/=]+)/,
+          /base64:([A-Za-z0-9+/=]+)/,
+          /([A-Za-z0-9+/=]{100,})/
+        ];
+
+        for (const pattern of base64Patterns) {
+          const match = content.match(pattern);
+          if (match) {
+            const base64Data = match[1];
+            console.log(`Found base64 data with pattern, length: ${base64Data.length}`);
+            
+            try {
+              const imageBuffer = Buffer.from(base64Data, 'base64');
+              console.log(`Successfully decoded image buffer, size: ${imageBuffer.length} bytes`);
+              
+              // Validate that it's a valid image by checking header
+              if (imageBuffer.length > 10) {
+                return imageBuffer;
+              }
+            } catch (decodeError) {
+              console.log('Failed to decode base64:', decodeError);
+              continue;
+            }
+          }
+        }
+
+        console.log('No valid base64 image found in response, content preview:', content.substring(0, 500));
+        throw new Error('No valid image data found in Chat API response');
+
+      } catch (error) {
+        console.error(`Chat API call attempt ${attempt} failed:`, error);
+        
+        if (attempt === maxAttempts) {
+          throw new Error(`Gemini Chat API failed after ${maxAttempts} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        
+        const delay = Math.min(this.retryDelay * attempt, 3000);
         console.log(`Waiting ${delay}ms before retry...`);
         await this.sleep(delay);
       }

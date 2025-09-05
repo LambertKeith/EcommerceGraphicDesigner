@@ -4,6 +4,21 @@ export interface ProcessImageOptions {
   context?: Record<string, any>;
 }
 
+export interface GenerateImageOptions {
+  prompt: string;
+  style?: string;
+  size?: string;
+  negativePrompt?: string;
+  context?: Record<string, any>;
+}
+
+export interface GenerateImageResult {
+  success: boolean;
+  imageBuffer?: Buffer;
+  metadata?: Record<string, any>;
+  error?: string;
+}
+
 export interface ProcessImageResult {
   success: boolean;
   variants: Array<{
@@ -55,6 +70,7 @@ export abstract class AIService {
 
   // Abstract methods that must be implemented by concrete services
   abstract processImage(imagePath: string, options: ProcessImageOptions): Promise<ProcessImageResult>;
+  abstract generateImage(options: GenerateImageOptions): Promise<GenerateImageResult>;
   abstract testConnection(): Promise<{ success: boolean; error?: string }>;
   
   // Common utility methods

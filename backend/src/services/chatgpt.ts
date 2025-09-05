@@ -5,6 +5,8 @@ import {
   AIService, 
   ProcessImageOptions, 
   ProcessImageResult, 
+  GenerateImageOptions,
+  GenerateImageResult,
   AIModelConfig, 
   AIModelInfo, 
   AIModelType 
@@ -32,6 +34,19 @@ export interface ChatGPTResponse {
     message: string;
     type: string;
     code: string;
+  };
+}
+
+export interface ChatGPTGenerationResponse {
+  data?: Array<{
+    url?: string;
+    b64_json?: string;
+    revised_prompt?: string;
+  }>;
+  error?: {
+    message: string;
+    type?: string;
+    code?: string;
   };
 }
 
@@ -309,12 +324,177 @@ export class ChatGPTService extends AIService {
     return null;
   }
 
+  async generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
+    try {
+      const enhancedPrompt = this.buildGenerationPrompt(options);
+      
+      console.log('Generating image with ChatGPT...');
+      console.log('Enhanced prompt:', enhancedPrompt);
+      
+      // Generate image using ChatGPT image generation API
+      const generatedImage = await this.callChatGPTGenerationAPI(enhancedPrompt, options.size || '1024x1024');
+      
+      if (!generatedImage) {
+        throw new Error('Failed to generate image');
+      }
+
+      return {
+        success: true,
+        imageBuffer: generatedImage,
+        metadata: {
+          prompt: enhancedPrompt,
+          originalPrompt: options.prompt,
+          style: options.style,
+          size: options.size || '1024x1024',
+          model: this.config.model,
+          generation_method: 'chatgpt_text_to_image'
+        }
+      };
+      
+    } catch (error) {
+      console.error('ChatGPT image generation error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
+      };
+    }
+  }
+
+  private buildGenerationPrompt(options: GenerateImageOptions): string {
+    let prompt = options.prompt;
+    
+    // Apply style enhancement
+    if (options.style) {
+      const styleEnhancements = this.getStyleEnhancements(options.style);
+      prompt = `${prompt}, ${styleEnhancements}`;
+    }
+    
+    // Add standard quality guidelines
+    const qualityEnhancement = `
+Create a high-quality image suitable for general use.
+The image should be:
+- Clear and well-composed with good lighting
+- Professional but approachable aesthetic
+- Sharp details and good color balance
+- Suitable for standard commercial applications
+
+Original request: ${prompt}
+
+Generate a clear, well-composed image that meets standard quality requirements.`;
+
+    return qualityEnhancement;
+  }
+
+  private getStyleEnhancements(style: string): string {
+    const styleMap: Record<string, string> = {
+      'commercial': 'professional appearance, clean composition, business-appropriate',
+      'artistic': 'creative style, artistic composition, visually interesting',
+      'minimal': 'clean and simple, minimalist aesthetic, uncluttered',
+      'realistic': 'photorealistic style, natural appearance, authentic details',
+      'vibrant': 'bright and colorful, high contrast, energetic feel'
+    };
+    
+    return styleMap[style] || styleMap['commercial'];
+  }
+
+  private async callChatGPTGenerationAPI(prompt: string, size: string): Promise<Buffer | null> {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.config.apiKey}`,
+    };
+
+    const payload = {
+      model: this.config.model,
+      prompt: prompt,
+      n: 1,
+      size: size
+    };
+
+    // Use image generation endpoint
+    const generationUrl = this.config.apiUrl.replace('/chat/completions', '/images/generations');
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        console.log(`Calling ChatGPT Generation API (attempt ${attempt}/${this.maxRetries})`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+        const response = await fetch(generationUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = this.parseAPIError(response.status, errorText);
+          
+          if (response.status === 429) {
+            console.log(`Rate limited, waiting ${this.rateLimitDelay}ms before retry`);
+            await this.sleep(this.rateLimitDelay);
+            continue;
+          } else if (response.status >= 500) {
+            console.log(`Server error (${response.status}), retrying...`);
+            throw new Error(error.message);
+          } else if (response.status === 401 || response.status === 403) {
+            throw new Error(`Authentication error: ${error.message}. Please check your API key.`);
+          } else {
+            throw new Error(error.message);
+          }
+        }
+
+        const result = await response.json() as ChatGPTGenerationResponse;
+        
+        if (result.error) {
+          throw new Error(`ChatGPT Generation API Error: ${result.error.message}`);
+        }
+
+        // Extract image data from response
+        if (result.data && result.data[0] && result.data[0].url) {
+          const imageUrl = result.data[0].url;
+          const imageResponse = await fetch(imageUrl);
+          
+          if (!imageResponse.ok) {
+            throw new Error('Failed to download generated image');
+          }
+          
+          const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+          return imageBuffer;
+        } else if (result.data && result.data[0] && result.data[0].b64_json) {
+          return Buffer.from(result.data[0].b64_json, 'base64');
+        } else {
+          throw new Error('No image data found in API response');
+        }
+
+      } catch (error) {
+        console.error(`ChatGPT Generation API call attempt ${attempt} failed:`, error);
+        
+        if (attempt === this.maxRetries) {
+          if (error instanceof Error && error.message.includes('Authentication error')) {
+            throw error;
+          }
+          throw new Error(`ChatGPT Generation API failed after ${this.maxRetries} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+        
+        const delay = this.retryDelay * Math.pow(2, attempt - 1);
+        console.log(`Waiting ${delay}ms before retry...`);
+        await this.sleep(delay);
+      }
+    }
+
+    return null;
+  }
+
   getModelInfo(): AIModelInfo {
     return {
       id: 'chatgpt' as AIModelType,
       name: 'ChatGPT Vision',
       description: '基础图像处理模型，适合标准编辑和日常图像优化任务',
-      capabilities: ['基础编辑', '标准优化', '简单修图', '日常处理'],
+      capabilities: ['基础编辑', '标准优化', '简单修图', '日常处理', '标准文生图'],
       speed: 'medium',
       quality: 'standard',
       recommended: ['日常编辑', '基础优化', '简单修图', '入门级处理']
