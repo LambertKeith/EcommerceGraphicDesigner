@@ -8,12 +8,14 @@ export class FileStorageService {
   private resultsDir: string;
   private thumbnailsDir: string;
   private exportsDir: string;
+  private tempDir: string;
 
   constructor() {
     this.uploadsDir = path.resolve(process.env.UPLOAD_DIR || '../storage/uploads');
     this.resultsDir = path.resolve(process.env.RESULTS_DIR || '../storage/results');
     this.thumbnailsDir = path.resolve(process.env.THUMBNAILS_DIR || '../storage/thumbnails');
     this.exportsDir = path.resolve(process.env.EXPORTS_DIR || '../storage/exports');
+    this.tempDir = path.resolve(process.env.TEMP_DIR || '../storage/temp');
   }
 
   async init(): Promise<void> {
@@ -22,6 +24,7 @@ export class FileStorageService {
       this.ensureDirectory(this.resultsDir),
       this.ensureDirectory(this.thumbnailsDir),
       this.ensureDirectory(this.exportsDir),
+      this.ensureDirectory(this.tempDir),
     ]);
   }
 
@@ -320,6 +323,44 @@ export class FileStorageService {
         success: false,
         error: `Failed to process image: ${error instanceof Error ? error.message : 'Unknown error'}`
       };
+    }
+  }
+
+  /**
+   * Save a temporary image from buffer for multi-step processing
+   */
+  async saveTempImage(imageBuffer: Buffer): Promise<string> {
+    const tempFilename = `temp_${uuidv4()}.jpg`;
+    const tempPath = path.join(this.tempDir, tempFilename);
+    
+    try {
+      await fs.writeFile(tempPath, imageBuffer);
+      return tempPath;
+    } catch (error) {
+      throw new Error(`Failed to save temporary image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Clean up temporary files older than specified hours
+   */
+  async cleanupTempFiles(maxAgeHours: number = 2): Promise<void> {
+    try {
+      const files = await fs.readdir(this.tempDir);
+      const now = Date.now();
+      const maxAge = maxAgeHours * 60 * 60 * 1000;
+
+      for (const filename of files) {
+        const filePath = path.join(this.tempDir, filename);
+        const stats = await fs.stat(filePath);
+        
+        if (now - stats.mtime.getTime() > maxAge) {
+          await fs.unlink(filePath);
+          console.log(`Cleaned up temporary file: ${filename}`);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to cleanup temporary files:', error);
     }
   }
 }

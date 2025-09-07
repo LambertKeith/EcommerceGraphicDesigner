@@ -7,6 +7,7 @@ import { AIModelType } from '../types';
 import VariantGallery from './VariantGallery';
 import ProcessingProgress from './ProcessingProgress';
 import ModelSelector from './ModelSelector';
+import ImageUpload from './ImageUpload';
 
 const ImageEditor: React.FC = () => {
   const {
@@ -120,7 +121,28 @@ const ImageEditor: React.FC = () => {
     }
   ];
 
-  if (!currentImage) return null;
+  // 当没有图像时显示上传界面
+  if (!currentImage) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="py-8"
+      >
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-white mb-2">
+            上传图片开始编辑
+          </h2>
+          <p className="text-white/70">
+            上传一张产品图片，使用AI进行专业编辑和优化
+          </p>
+        </div>
+        <ImageUpload onImageUploaded={() => {
+          // 图片上传后会自动更新currentImage状态
+        }} />
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -397,7 +419,7 @@ const ImageEditor: React.FC = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="mt-12"
               >
-                <VariantGallery variants={variants} />
+                <VariantGallery />
               </motion.div>
             )}
           </AnimatePresence>

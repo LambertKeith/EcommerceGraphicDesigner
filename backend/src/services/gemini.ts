@@ -206,7 +206,9 @@ export class GeminiService extends AIService {
 
 任务要求：${basePrompt}
 
-请输出一张最高质量的处理结果图像。`;
+重要：请输出一张经过处理的图像作为回答。使用markdown格式包含base64编码的图像数据：![image](data:image/png;base64,<base64_data>)。确保输出的是完整的、高质量的处理结果图像。
+
+CRITICAL: You MUST generate and return a processed image. Please return the enhanced image in base64 format using markdown syntax: ![image](data:image/png;base64,YOUR_BASE64_DATA_HERE). The base64 data must be a complete, valid image file.`;
 
     return professionalGuidance;
   }
@@ -287,15 +289,21 @@ export class GeminiService extends AIService {
 
         const messageContent = result.choices?.[0]?.message?.content;
         
+        console.log('Gemini API response received, content type:', typeof messageContent);
+        console.log('Content length:', messageContent?.length || 0);
+        
         if (messageContent) {
           // Extract base64 image data from markdown format: ![image](data:image/png;base64,...)
           const base64Match = messageContent.match(/data:image\/[^;]+;base64,([^)]+)/);
           if (base64Match && base64Match[1]) {
+            console.log('Successfully extracted base64 image data, size:', base64Match[1].length, 'characters');
             return Buffer.from(base64Match[1], 'base64');
           } else {
-            throw new Error('No image data found in API response. The model may not have generated an image for this request.');
+            console.log('No image data found in API response, content preview:', messageContent?.substring(0, 200));
+            throw new Error(`No image data found in API response. The model may not have generated an image for this request.`);
           }
         } else {
+          console.log('No message content received from Gemini API');
           throw new Error('No message content received from Gemini API.');
         }
 
@@ -536,7 +544,7 @@ Generate a single, best-quality result that meets commercial standards.`;
       messages: [
         {
           role: "system",
-          content: "You are an AI image generator. When asked to create an image, generate a detailed visual representation and return it as a base64-encoded image data URL."
+          content: "You are an AI image generator specializing in e-commerce product images. When asked to create an image, you MUST generate a visual representation and return it as base64-encoded image data in markdown format: ![image](data:image/png;base64,YOUR_BASE64_DATA). You must include actual image data, not just text descriptions."
         },
         {
           role: "user",
@@ -601,7 +609,7 @@ Generate a single, best-quality result that meets commercial standards.`;
           throw new Error('No content in Chat API response');
         }
 
-        console.log('Chat API returned content length:', content.length);
+        console.log('Chat API response received, content length:', content.length);
 
         // Try to extract base64 image from the response
         const base64Patterns = [
@@ -614,24 +622,24 @@ Generate a single, best-quality result that meets commercial standards.`;
           const match = content.match(pattern);
           if (match) {
             const base64Data = match[1];
-            console.log(`Found base64 data with pattern, length: ${base64Data.length}`);
+            console.log('Found potential base64 image data, size:', base64Data.length, 'characters');
             
             try {
               const imageBuffer = Buffer.from(base64Data, 'base64');
-              console.log(`Successfully decoded image buffer, size: ${imageBuffer.length} bytes`);
+              console.log('Successfully decoded image buffer, size:', imageBuffer.length, 'bytes');
               
               // Validate that it's a valid image by checking header
               if (imageBuffer.length > 10) {
                 return imageBuffer;
               }
             } catch (decodeError) {
-              console.log('Failed to decode base64:', decodeError);
+              console.log('Failed to decode base64 data');
               continue;
             }
           }
         }
 
-        console.log('No valid base64 image found in response, content preview:', content.substring(0, 500));
+        console.log('No valid base64 image found in response');
         throw new Error('No valid image data found in Chat API response');
 
       } catch (error) {

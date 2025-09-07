@@ -1,5 +1,16 @@
 import axios from 'axios';
-import { ApiResponse, UploadResult, Session, JobStatus, AIModelsResponse, AIModelType } from '../types';
+import { 
+  ApiResponse, 
+  UploadResult, 
+  Session, 
+  JobStatus, 
+  AIModelsResponse, 
+  AIModelType,
+  ScenarioWithFeatures,
+  Feature,
+  UserPreferences,
+  FeatureExecutionRequest
+} from '../types';
 
 const API_BASE_URL = '/api';
 
@@ -120,7 +131,30 @@ export const apiService = {
   },
 
   createEventSource(jobId: string): EventSource {
-    return new EventSource(`${API_BASE_URL}/job/stream/${jobId}`);
+    const url = `${API_BASE_URL}/job/stream/${jobId}`;
+    console.log('🌐 创建EventSource:', {
+      url,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      connection: navigator.connection ? {
+        effectiveType: navigator.connection.effectiveType,
+        rtt: navigator.connection.rtt,
+        downlink: navigator.connection.downlink
+      } : 'unavailable'
+    });
+    
+    const eventSource = new EventSource(url);
+    
+    // 添加初始连接状态监控
+    setTimeout(() => {
+      console.log('🔍 EventSource初始状态检查:', {
+        readyState: eventSource.readyState,
+        url: eventSource.url,
+        withCredentials: eventSource.withCredentials
+      });
+    }, 100);
+    
+    return eventSource;
   },
 
   async getAvailableModels(): Promise<AIModelsResponse> {
@@ -141,5 +175,106 @@ export const apiService = {
     }
 
     return response.data.data!.connection;
+  },
+
+  // Scenario-related API methods
+  async getScenarios(): Promise<ScenarioWithFeatures[]> {
+    const response = await api.get<ApiResponse<ScenarioWithFeatures[]>>('/scenarios');
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get scenarios');
+    }
+
+    return response.data.data!;
+  },
+
+  async getScenario(identifier: string): Promise<ScenarioWithFeatures> {
+    const response = await api.get<ApiResponse<ScenarioWithFeatures>>(`/scenarios/${identifier}`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get scenario');
+    }
+
+    return response.data.data!;
+  },
+
+  async getAllFeatures(): Promise<Feature[]> {
+    const response = await api.get<ApiResponse<Feature[]>>('/scenarios/features/all');
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get features');
+    }
+
+    return response.data.data!;
+  },
+
+  async getFeature(identifier: string): Promise<Feature> {
+    const response = await api.get<ApiResponse<Feature>>(`/scenarios/features/${identifier}`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get feature');
+    }
+
+    return response.data.data!;
+  },
+
+  async searchFeaturesByTags(tags: string[]): Promise<Feature[]> {
+    const response = await api.get<ApiResponse<Feature[]>>('/scenarios/features/search', {
+      params: { tags: tags.join(',') }
+    });
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to search features');
+    }
+
+    return response.data.data!;
+  },
+
+  async executeFeature(request: FeatureExecutionRequest): Promise<{ job_id: string; model: AIModelType; feature: any }> {
+    const response = await api.post<ApiResponse<{ job_id: string; model: AIModelType; feature: any }>>('/edit/feature', request);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to execute feature');
+    }
+
+    return response.data.data!;
+  },
+
+  async getUserPreferences(userId: string): Promise<UserPreferences> {
+    const response = await api.get<ApiResponse<UserPreferences>>(`/scenarios/preferences/${userId}`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get user preferences');
+    }
+
+    return response.data.data!;
+  },
+
+  async updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences> {
+    const response = await api.put<ApiResponse<UserPreferences>>(`/scenarios/preferences/${userId}`, updates);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to update user preferences');
+    }
+
+    return response.data.data!;
+  },
+
+  async incrementFeatureUsage(userId: string, featureId: string): Promise<void> {
+    const response = await api.post<ApiResponse>(`/scenarios/preferences/${userId}/increment/${featureId}`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to increment feature usage');
+    }
+  },
+
+  async getJobVariants(jobId: string): Promise<any[]> {
+    const response = await api.get<ApiResponse<any[]>>(`/job/${jobId}/variants`);
+
+    if (!response.data.success) {
+      throw new Error(response.data.error || 'Failed to get job variants');
+    }
+
+    return response.data.data!;
   },
 };

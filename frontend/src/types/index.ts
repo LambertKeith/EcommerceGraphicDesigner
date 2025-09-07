@@ -34,6 +34,8 @@ export interface Session {
   id: string;
   project_id: string;
   context_json: Record<string, any>;
+  scenario_id?: string;
+  workflow_context: Record<string, any>;
   created_at: string;
   last_active_at: string;
 }
@@ -46,6 +48,8 @@ export interface Image {
   width: number;
   height: number;
   meta_json: Record<string, any>;
+  scenario_tags: string[];
+  usage_context: Record<string, any>;
   created_at: string;
 }
 
@@ -88,4 +92,73 @@ export interface UploadResult {
   thumbnail_url: string;
   width: number;
   height: number;
+}
+
+// Scenario-related types
+export interface Scenario {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feature {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  prompt_template: string;
+  icon?: string;
+  preview_image_url?: string;
+  use_case_tags: string[];
+  model_preferences?: {
+    preferred?: string[];
+    fallback?: string[];
+  };
+  processing_options: {
+    dual_image?: boolean;
+    mask_required?: boolean;
+    mask_supported?: boolean;
+    two_step?: boolean;
+    step2_prompt?: string;
+    custom_prompt?: boolean;
+  };
+  sort_order: number;
+  is_active: boolean;
+  is_featured: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScenarioWithFeatures extends Scenario {
+  features: Feature[];
+}
+
+export interface UserPreferences {
+  id: string;
+  user_id: string;
+  favorite_scenarios: string[];
+  favorite_features: string[];
+  feature_usage_count: Record<string, number>;
+  last_used_scenario?: string;
+  preferences: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeatureExecutionRequest {
+  session_id: string;
+  image_id: string;
+  feature_id: string;
+  scenario_id?: string;
+  custom_prompt?: string;
+  second_image_id?: string;
+  mask_data?: string;
+  user_id?: string;
 }

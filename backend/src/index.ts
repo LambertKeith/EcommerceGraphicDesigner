@@ -21,8 +21,10 @@ import sessionRoutes from './routes/session';
 import jobRoutes from './routes/job';
 import imageRoutes from './routes/image';
 import editRoutes from './routes/edit';
+import featureEditRoutes from './routes/featureEdit';
 import configRoutes from './routes/config';
 import generateRoutes from './routes/generate';
+import scenarioRoutes from './routes/scenarios';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -52,8 +54,10 @@ app.use('/api/session', sessionRoutes);
 app.use('/api/job', jobRoutes);
 app.use('/api/image', imageRoutes);
 app.use('/api/edit', editRoutes);
+app.use('/api/edit', featureEditRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/generate', generateRoutes);
+app.use('/api/scenarios', scenarioRoutes);
 
 // Health and version endpoints
 app.get('/api/health', (req, res) => {
@@ -125,8 +129,10 @@ async function startServer() {
     process.on('SIGTERM', gracefulShutdown);
     process.on('SIGINT', gracefulShutdown);
 
+    // Cleanup tasks
     setInterval(async () => {
       await fileStorage.cleanupExpiredFiles('exports', 24);
+      await fileStorage.cleanupTempFiles(2); // Clean temp files older than 2 hours
     }, 60 * 60 * 1000);
 
   } catch (error) {

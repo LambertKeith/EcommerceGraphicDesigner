@@ -2,12 +2,16 @@ import React from 'react';
 import { CheckCircle, AlertCircle, Loader2, Sparkles, Zap, Brain, Wand2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { JobStatus } from '../types';
+import { useAppStore } from '../stores/appStore';
 
-interface ProcessingProgressProps {
-  status: JobStatus;
-}
+const ProcessingProgress: React.FC = () => {
+  const { jobStatus } = useAppStore();
 
-const ProcessingProgress: React.FC<ProcessingProgressProps> = ({ status }) => {
+  if (!jobStatus) {
+    return null;
+  }
+
+  const status = jobStatus;
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':

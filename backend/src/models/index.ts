@@ -22,10 +22,15 @@ export class ProjectModel {
 }
 
 export class SessionModel {
-  async create(project_id: string, context_json: Record<string, any> = {}): Promise<Session> {
+  async create(
+    project_id: string, 
+    context_json: Record<string, any> = {},
+    scenario_id?: string,
+    workflow_context: Record<string, any> = {}
+  ): Promise<Session> {
     const result = await db.query(
-      'INSERT INTO sessions (project_id, context_json) VALUES ($1, $2) RETURNING *',
-      [project_id, JSON.stringify(context_json)]
+      'INSERT INTO sessions (project_id, context_json, scenario_id, workflow_context) VALUES ($1, $2, $3, $4) RETURNING *',
+      [project_id, JSON.stringify(context_json), scenario_id, JSON.stringify(workflow_context)]
     );
     return result.rows[0];
   }
@@ -35,20 +40,45 @@ export class SessionModel {
     return result.rows[0] || null;
   }
 
-  async updateContext(id: string, context_json: Record<string, any>): Promise<Session> {
+  async updateContext(
+    id: string, 
+    context_json: Record<string, any>,
+    workflow_context?: Record<string, any>
+  ): Promise<Session> {
+    const query = workflow_context 
+      ? 'UPDATE sessions SET context_json = $1, workflow_context = $2, last_active_at = NOW() WHERE id = $3 RETURNING *'
+      : 'UPDATE sessions SET context_json = $1, last_active_at = NOW() WHERE id = $2 RETURNING *';
+    
+    const params = workflow_context 
+      ? [JSON.stringify(context_json), JSON.stringify(workflow_context), id]
+      : [JSON.stringify(context_json), id];
+    
+    const result = await db.query(query, params);
+    return result.rows[0];
+  }
+
+  async updateScenario(id: string, scenario_id: string): Promise<Session> {
     const result = await db.query(
-      'UPDATE sessions SET context_json = $1, last_active_at = NOW() WHERE id = $2 RETURNING *',
-      [JSON.stringify(context_json), id]
+      'UPDATE sessions SET scenario_id = $1, last_active_at = NOW() WHERE id = $2 RETURNING *',
+      [scenario_id, id]
     );
     return result.rows[0];
   }
 }
 
 export class ImageModel {
-  async create(project_id: string, path: string, width: number, height: number, meta_json: Record<string, any> = {}): Promise<Image> {
+  async create(
+    project_id: string, 
+    path: string, 
+    width: number, 
+    height: number, 
+    meta_json: Record<string, any> = {},
+    scenario_tags: string[] = [],
+    usage_context: Record<string, any> = {}
+  ): Promise<Image> {
     const result = await db.query(
-      'INSERT INTO images (project_id, path, width, height, meta_json) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [project_id, path, width, height, JSON.stringify(meta_json)]
+      'INSERT INTO images (project_id, path, width, height, meta_json, scenario_tags, usage_context) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [project_id, path, width, height, JSON.stringify(meta_json), scenario_tags, JSON.stringify(usage_context)]
     );
     return result.rows[0];
   }
@@ -62,13 +92,30 @@ export class ImageModel {
     const result = await db.query('SELECT * FROM images WHERE project_id = $1 ORDER BY created_at DESC', [project_id]);
     return result.rows;
   }
+
+  async updateTags(id: string, scenario_tags: string[]): Promise<Image> {
+    const result = await db.query(
+      'UPDATE images SET scenario_tags = $1 WHERE id = $2 RETURNING *',
+      [scenario_tags, id]
+    );
+    return result.rows[0];
+  }
 }
 
 export class JobModel {
-  async create(session_id: string, input_image_id: string, type: Job['type'], prompt?: string, model?: string): Promise<Job> {
+  async create(
+    session_id: string, 
+    input_image_id: string, 
+    type: Job['type'], 
+    prompt?: string, 
+    model?: string,
+    scenario_id?: string,
+    feature_id?: string,
+    feature_context: Record<string, any> = {}
+  ): Promise<Job> {
     const result = await db.query(
-      'INSERT INTO jobs (session_id, input_image_id, type, prompt, model_used, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [session_id, input_image_id, type, prompt, model, 'queued']
+      'INSERT INTO jobs (session_id, input_image_id, type, prompt, model_used, scenario_id, feature_id, feature_context, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+      [session_id, input_image_id, type, prompt, model, scenario_id, feature_id, JSON.stringify(feature_context), 'queued']
     );
     return result.rows[0];
   }

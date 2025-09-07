@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { Star, Download, Maximize2, Trophy, Zap, Heart, Share2, Eye, CheckCircle, Copy, AlertCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Variant } from '../types';
+import { useAppStore } from '../stores/appStore';
 import DownloadModal from './DownloadModal';
 
-interface VariantGalleryProps {
-  variants: Variant[];
-}
-
-const VariantGallery: React.FC<VariantGalleryProps> = ({ variants }) => {
+const VariantGallery: React.FC = () => {
+  const { variants } = useAppStore();
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [hoveredVariant, setHoveredVariant] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);

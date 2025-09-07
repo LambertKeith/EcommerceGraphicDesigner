@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Image, Session, Job, Variant, JobStatus } from '../types';
+import { Image, Session, Job, Variant, JobStatus, ScenarioWithFeatures, Feature } from '../types';
 
 interface GenerateJobStatus {
   id: string;
@@ -20,6 +20,12 @@ interface AppState {
   currentJob: Job | null;
   jobStatus: JobStatus | null;
   variants: Variant[];
+  
+  // Scenario state
+  scenarios: ScenarioWithFeatures[];
+  selectedScenario: ScenarioWithFeatures | null;
+  selectedFeature: Feature | null;
+  isScenarioMode: boolean;
   
   // Text-to-image generation state
   currentPrompt: string;
@@ -47,6 +53,12 @@ interface AppState {
   setUploadProgress: (progress: number) => void;
   setProcessingProgress: (progress: number) => void;
   
+  // Scenario actions
+  setScenarios: (scenarios: ScenarioWithFeatures[]) => void;
+  setSelectedScenario: (scenario: ScenarioWithFeatures | null) => void;
+  setSelectedFeature: (feature: Feature | null) => void;
+  setIsScenarioMode: (isScenarioMode: boolean) => void;
+  
   // Text-to-image actions
   setCurrentPrompt: (prompt: string) => void;
   setSelectedStyle: (style: string) => void;
@@ -67,6 +79,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentJob: null,
   jobStatus: null,
   variants: [],
+  
+  // Scenario initial state
+  scenarios: [],
+  selectedScenario: null,
+  selectedFeature: null,
+  isScenarioMode: true, // Start in scenario mode by default
   
   // Text-to-image initial state
   currentPrompt: '',
@@ -93,6 +111,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setUploadProgress: (progress) => set({ uploadProgress: progress }),
   setProcessingProgress: (progress) => set({ processingProgress: progress }),
   
+  // Scenario actions
+  setScenarios: (scenarios) => set({ scenarios }),
+  setSelectedScenario: (scenario) => set({ selectedScenario: scenario }),
+  setSelectedFeature: (feature) => set({ selectedFeature: feature }),
+  setIsScenarioMode: (isScenarioMode) => set({ isScenarioMode }),
+  
   // Text-to-image actions
   setCurrentPrompt: (prompt) => set({ currentPrompt: prompt }),
   setSelectedStyle: (style) => set({ selectedStyle: style }),
@@ -108,6 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     currentJob: null,
     jobStatus: null,
     variants: [],
+    selectedFeature: null, // Keep scenario selection but reset feature
     isUploading: false,
     isProcessing: false,
     uploadProgress: 0,

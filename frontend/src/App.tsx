@@ -4,13 +4,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ImageUpload from './components/ImageUpload';
 import ImageEditor from './components/ImageEditor';
 import TextToImageGenerator from './components/TextToImageGenerator';
+import ScenarioApp from './components/ScenarioApp';
 import AppConfigWrapper from './components/AppConfigWrapper';
 import { useAppStore } from './stores/appStore';
 
-type ViewMode = 'home' | 'edit' | 'generate';
+type ViewMode = 'home' | 'edit' | 'generate' | 'scenario';
 
 function App() {
-  const { currentImage } = useAppStore();
+  const { currentImage, isScenarioMode } = useAppStore();
   const [viewMode, setViewMode] = useState<ViewMode>('home');
 
   const containerVariants = {
@@ -92,9 +93,23 @@ function App() {
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setViewMode('home')}
+                    onClick={() => setViewMode('scenario')}
                     className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-all ${
-                      viewMode === 'home'
+                      viewMode === 'scenario'
+                        ? 'bg-white/20 text-white border border-white/30'
+                        : 'text-white/70 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Star className="h-4 w-4" />
+                    <span className="text-sm font-medium">场景模式</span>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setViewMode('edit')}
+                    className={`px-4 py-2 rounded-lg flex items-center space-x-2 transition-all ${
+                      viewMode === 'edit'
                         ? 'bg-white/20 text-white border border-white/30'
                         : 'text-white/70 hover:text-white hover:bg-white/10'
                     }`}
@@ -133,7 +148,18 @@ function App() {
 
           <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <AnimatePresence mode="wait">
-              {viewMode === 'generate' ? (
+              {viewMode === 'scenario' ? (
+                <motion.div
+                  key="scenario"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.6 }}
+                  className="py-8"
+                >
+                  <ScenarioApp />
+                </motion.div>
+              ) : viewMode === 'generate' ? (
                 <motion.div
                   key="generate"
                   initial={{ opacity: 0, y: 20 }}

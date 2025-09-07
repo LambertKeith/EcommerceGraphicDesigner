@@ -2,6 +2,8 @@ export interface ProcessImageOptions {
   type: 'optimize' | 'edit' | 'refine';
   prompt?: string;
   context?: Record<string, any>;
+  maskData?: string; // base64 encoded mask for selective editing
+  secondImagePath?: string; // path to second image for dual-image features
 }
 
 export interface GenerateImageOptions {
