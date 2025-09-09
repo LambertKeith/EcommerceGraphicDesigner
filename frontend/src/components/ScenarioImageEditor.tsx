@@ -262,14 +262,14 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
           const data = JSON.parse(event.data);
           console.log('🎉 SSE任务完成:', {
             jobId: data.job_id,
-            variantCount: data.variants?.length || 0,
+            variantCount: data.result_variants?.length || 0,
             model: data.model_used,
             timestamp: new Date().toISOString()
           });
           setJobStatus(data);
-          if (data.variants && data.variants.length > 0) {
-            console.log('📷 设置variants数据，数量:', data.variants.length);
-            setVariants(data.variants);
+          if (data.result_variants && data.result_variants.length > 0) {
+            console.log('📷 设置variants数据，数量:', data.result_variants.length);
+            setVariants(data.result_variants);
           }
           setIsProcessing(false);
           sseConnected = false;
@@ -515,7 +515,33 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
           });
           
           // 验证variant_ids存在性
-          if (jobStatus.result_variant_ids && jobStatus.result_variant_ids.length > 0) {
+          if (jobStatus.result_variants && jobStatus.result_variants.length > 0) {
+            console.log('✅ 🎯 直接从jobStatus获取variants数据:', {
+              variantCount: jobStatus.result_variants.length,
+              jobId: jobId.slice(-8)
+            });
+            
+            // 🎯 关键：直接使用jobStatus中的result_variants
+            console.log('🔄 设置variants到React状态...');
+            setVariants(jobStatus.result_variants);
+            console.log('✅ setVariants调用完成');
+            
+            // 验证状态是否设置成功
+            setTimeout(() => {
+              console.log('🔍 验证variants状态设置结果 (100ms后)');
+              // 验证每个variant的关键字段
+              jobStatus.result_variants!.forEach((v, idx) => {
+                console.log(`📷 Variant ${idx + 1}:`, {
+                  id: v.id?.slice(-8),
+                  score: v.score,
+                  hasImageUrl: !!v.image_url,
+                  hasThumbPath: !!v.thumb_path,
+                  imageUrl: v.image_url || 'undefined',
+                  thumbPath: v.thumb_path || 'undefined'
+                });
+              });
+            }, 100);
+          } else if (jobStatus.result_variant_ids && jobStatus.result_variant_ids.length > 0) {
             console.log('📷 开始获取variants数据...', {
               variantIds: jobStatus.result_variant_ids,
               jobId: jobId.slice(-8)
@@ -542,6 +568,17 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
               // 验证状态是否设置成功
               setTimeout(() => {
                 console.log('🔍 验证variants状态设置结果 (100ms后)');
+                // 验证每个variant的关键字段
+                variants.forEach((v, idx) => {
+                  console.log(`📷 Variant ${idx + 1}:`, {
+                    id: v.id?.slice(-8),
+                    score: v.score,
+                    hasImageUrl: !!v.image_url,
+                    hasThumbPath: !!v.thumb_path,
+                    imageUrl: v.image_url || 'undefined',
+                    thumbPath: v.thumb_path || 'undefined'
+                  });
+                });
               }, 100);
               
             } catch (variantError) {
@@ -604,7 +641,7 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
             }
           }
           
-          setError('处理超时，但任务可能仍在进行中。请使用"获取处理结果"按钮手动刷新');
+          setError('处理超时，请重新尝试或稍后再试');
           setIsProcessing(false);
           return;
         }
@@ -792,6 +829,21 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
           setError(null); // 清除之前的错误
           console.log('✅ 手动刷新成功完成');
           
+          // 验证手动刷新获取的variants数据
+          setTimeout(() => {
+            console.log('🔍 手动刷新variants验证 (100ms后)');
+            variants.forEach((v, idx) => {
+              console.log(`📷 手动刷新 Variant ${idx + 1}:`, {
+                id: v.id?.slice(-8),
+                score: v.score,
+                hasImageUrl: !!v.image_url,
+                hasThumbPath: !!v.thumb_path,
+                imageUrl: v.image_url || 'undefined',
+                thumbPath: v.thumb_path || 'undefined'
+              });
+            });
+          }, 100);
+          
         } catch (variantErr) {
           console.error('❌ 手动刷新variants获取失败:', {
             error: variantErr instanceof Error ? variantErr.message : variantErr,
@@ -901,8 +953,35 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
       // 记录任务ID用于手动刷新
       setLastJobId(result.job_id);
 
-      // Start SSE monitoring
-      startJobMonitoring(result.job_id);
+      // 临时使用简单轮询（像ImageEditor一样）
+      console.log('🚀 启动简单轮询监控（临时测试版）');
+      const pollJobStatus = async () => {
+        try {
+          console.log('🔄 检查任务状态:', result.job_id);
+          const status = await apiService.getJobStatus(result.job_id);
+          console.log('📋 任务状态响应:', status);
+          setJobStatus(status);
+
+          if (status.status === 'done') {
+            console.log('✅ 任务完成！设置variants:', status.result_variants);
+            setVariants(status.result_variants || []);
+            setIsProcessing(false);
+          } else if (status.status === 'error') {
+            console.log('❌ 任务失败:', status.error_msg);
+            setError(status.error_msg || 'Processing failed');
+            setIsProcessing(false);
+          } else {
+            console.log('⏳ 任务进行中，5秒后再次检查');
+            setTimeout(pollJobStatus, 5000);
+          }
+        } catch (err) {
+          console.error('❌ 轮询失败:', err);
+          setError('Failed to check job status');
+          setIsProcessing(false);
+        }
+      };
+      
+      pollJobStatus();
 
       onJobStarted?.(result.job_id);
 
@@ -1118,19 +1197,6 @@ const ScenarioImageEditor: React.FC<ScenarioImageEditorProps> = ({ onJobStarted 
           </div>
         )}
       </motion.button>
-
-      {/* 手动刷新按钮 */}
-      {lastJobId && !isExecuting && (
-        <motion.button
-          onClick={handleRefreshResults}
-          className="w-full py-2 px-4 rounded-lg font-medium text-white bg-purple-600 hover:bg-purple-700 mt-2 flex items-center justify-center"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          <span className="mr-2">🔄</span>
-          获取处理结果
-        </motion.button>
-      )}
 
       {/* 处理说明 */}
       <div className="text-center mt-4 text-xs text-gray-500">

@@ -27,7 +27,7 @@ import generateRoutes from './routes/generate';
 import scenarioRoutes from './routes/scenarios';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3005;
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
 
 app.use(helmet());

@@ -240,7 +240,20 @@ export class VariantModel {
   }
 
   async findByJobId(job_id: string): Promise<Variant[]> {
-    const result = await db.query('SELECT * FROM variants WHERE job_id = $1 ORDER BY score DESC', [job_id]);
-    return result.rows;
+    const result = await db.query(`
+      SELECT 
+        v.*,
+        i.path as image_path
+      FROM variants v
+      JOIN images i ON v.image_id = i.id
+      WHERE v.job_id = $1 
+      ORDER BY v.score DESC
+    `, [job_id]);
+    
+    // Add image_url to each variant
+    return result.rows.map(row => ({
+      ...row,
+      image_url: row.image_path ? `/static${row.image_path}` : null
+    }));
   }
 }

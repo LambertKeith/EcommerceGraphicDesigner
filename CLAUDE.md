@@ -20,7 +20,18 @@ cp .env.example .env
 # Edit .env with your database URL, Redis URL, and Google Gemini API key
 ```
 
-### Development
+## 🚀 Quick Start Recommendation
+
+**For the best development and user experience, use Scenario Mode:**
+1. Start the application: `pnpm run dev`
+2. Navigate to http://localhost:3001
+3. Click "场景模式" (Scenario Mode) in the top navigation
+4. Upload an image and explore pre-configured processing scenarios
+5. Experience one-click professional image enhancement
+
+Scenario Mode provides the most streamlined user experience with intelligent AI model selection and pre-optimized processing workflows.
+
+## Development Commands
 ```bash
 # Start both backend and frontend in development mode
 pnpm run dev
@@ -79,9 +90,28 @@ docker-compose exec backend pnpm run migrate
 ## Architecture Overview
 
 ### System Design
-This is a production-ready, full-stack AI-powered e-commerce image editor with multi-model AI support (Gemini, Sora, ChatGPT). The application processes product images through AI enhancement with real-time progress tracking, intelligent model selection, and comprehensive error handling.
+This is a production-ready, full-stack AI-powered e-commerce image editor with multi-model AI support (Gemini, Sora, ChatGPT). The application features three distinct modes: **Scenario Mode** (recommended), Traditional Image Editing, and Text-to-Image Generation. All modes process product images through AI enhancement with real-time progress tracking, intelligent model selection, and comprehensive error handling.
 
-**Flow**: Image Upload → Security Validation → Project/Session Creation → AI Model Selection → Processing Job → Single High-Quality Variant → Download Modal
+**Primary Flow**: Image Upload → Security Validation → Project/Session Creation → **Scenario Selection** → Feature Execution → AI Model Selection → Processing Job → Single High-Quality Variant → Automatic Display
+
+### Key Modes
+
+**🎯 Scenario Mode (Primary):**
+- Pre-configured processing scenarios (E-commerce Products, Artistic Creation, Professional Photography)
+- One-click feature execution with intelligent prompts
+- Automatic model selection based on task requirements
+- Simplified user experience with guided workflows
+
+**🖼️ Traditional Editing Mode:**
+- Free-form image editing with custom prompts
+- Manual model selection and parameter control
+- Multi-round editing with context preservation
+- Advanced user control for specific requirements
+
+**🎨 Text-to-Image Mode:**
+- Generate product images from text descriptions
+- Multiple style and size options
+- Professional templates for e-commerce use cases
 
 ### Backend Architecture (`backend/`)
 
@@ -99,7 +129,10 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 **API Structure:**
 - `routes/upload.ts` - Enhanced image upload with security validation and EXIF cleaning
 - `routes/session.ts` - Session management for multi-round editing
-- `routes/edit.ts` - AI processing job creation with idempotency support and async processing
+- `routes/edit.ts` - Traditional AI processing job creation with idempotency support and async processing
+- `routes/featureEdit.ts` - **NEW: Scenario-based feature execution with enhanced processing pipeline**
+- `routes/scenarios.ts` - **NEW: Scenario and feature management API**
+- `routes/generate.ts` - **NEW: Text-to-image generation service**
 - `routes/job.ts` - Enhanced job status polling and SSE progress streams with reconnection support
 - `routes/image.ts` - Image retrieval and export functionality
 - `routes/config.ts` - API configuration management with encrypted key storage and testing
@@ -110,10 +143,11 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 - `utils/errorSystem.ts` - Standardized error codes and multi-language support
 - `utils/apiKeyEncryption.ts` - Secure API key encryption/decryption utilities
 
-**Database Schema:** Enhanced 6-table design (projects, sessions, images, jobs, variants, api_configurations) with:
+**Database Schema:** Enhanced 7-table design (projects, sessions, images, jobs, variants, api_configurations, **scenarios, features, scenario_features**) with:
 - UUID primary keys and JSONB context storage
 - Advanced job tracking: attempts, last_error, model_used, started_at, queued_at
 - Status machine: pending → queued → running → done/error/failed
+- **Scenario System**: Comprehensive scenario and feature management with metadata
 - API configuration management with encrypted key storage and connection testing
 - PostgreSQL type consistency with proper VARCHAR/TEXT field handling
 
@@ -131,9 +165,14 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 
 **Key Components:**
 - `components/ImageUpload.tsx` - Drag-and-drop upload with react-dropzone
-- `components/ImageEditor.tsx` - Main editing interface with AI model selection and processing controls
+- `components/App.tsx` - Main application with mode switching (Scenario/Edit/Generate)
+- **`components/ScenarioApp.tsx`** - **NEW: Scenario mode main application with intelligent view management**
+- **`components/ScenarioSelector.tsx`** - **NEW: Interactive scenario and feature selection interface**
+- **`components/ScenarioImageEditor.tsx`** - **NEW: Scenario-based image processing with simplified polling**
+- `components/ImageEditor.tsx` - Traditional editing interface with AI model selection and processing controls
+- `components/TextToImageGenerator.tsx` - **NEW: Text-to-image generation interface**
 - `components/ModelSelector.tsx` - AI model selection interface with capability indicators
-- `components/VariantGallery.tsx` - Display AI-generated variants with integrated download functionality
+- `components/VariantGallery.tsx` - Display AI-generated variants with integrated download functionality (supports both thumb_path and image_url)
 - `components/DownloadModal.tsx` - Advanced export modal with format and resolution selection
 - `components/ProcessingProgress.tsx` - Real-time job progress with SSE and reconnection support
 - `components/InitialSetupWizard.tsx` - First-time setup wizard for API configuration
@@ -141,7 +180,10 @@ This is a production-ready, full-stack AI-powered e-commerce image editor with m
 - `components/AppConfigWrapper.tsx` - Configuration state management wrapper
 
 **API Integration:** 
-- `services/api.ts` - Legacy typed API client
+- `services/api.ts` - Comprehensive typed API client with scenario support
+  - `executeFeature()` - **NEW: Execute scenario-based features**
+  - `getScenarios()` - **NEW: Retrieve available scenarios**  
+  - `getJobVariants()` - **ENHANCED: Now returns image_url for direct display**
 - `services/apiGenerated.ts` - Auto-generated API client from OpenAPI specification
 - `types/api.ts` - Auto-generated TypeScript types from OpenAPI spec
 
@@ -278,10 +320,12 @@ Each refinement operation updates session context, allowing AI to maintain consi
 - 24-hour download link expiration with cleanup
 
 **Real-time Processing Feedback:** 
-- Enhanced SSE-based progress tracking
-- Heartbeat mechanism with automatic reconnection
+- **UPDATED: Simplified polling mechanism for Chrome localhost environments**
+- **Smart detection**: Auto-detects Chrome localhost and switches to reliable polling
+- **Hybrid approach**: SSE for compatible environments, polling for problematic ones
 - Detailed status updates including model usage and retry attempts
 - Error handling with user-friendly suggestions
+- **Automatic result display**: No manual refresh buttons needed - results appear automatically
 
 ### Security Features
 
@@ -312,6 +356,9 @@ Each refinement operation updates session context, allowing AI to maintain consi
 - Migration 002: Enhanced job tracking with retry mechanism
 - Migration 003: API configuration management with encrypted key storage
 - Migration 004: PostgreSQL type consistency fixes for job status updates
+- Migration 005: **NEW: Text-to-image generation support**
+- Migration 006: **NEW: Scenario system architecture** 
+- Migration 007: **NEW: Initialize scenario data with pre-configured scenarios**
 - Automatic migration execution when `RUN_MIGRATIONS=true`
 
 **File Cleanup:** 
@@ -328,6 +375,18 @@ Each refinement operation updates session context, allowing AI to maintain consi
 
 **Common Development Issues & Solutions:**
 
+**Scenario Mode Result Display:**
+- Issue: Generated images not displaying after processing completion
+- Root Cause: Field name mismatch - backend sends `result_variants`, frontend looks for `variants`
+- **Solution**: Updated ScenarioImageEditor to use `result_variants` field consistently
+- **Fixed**: Implemented simplified polling mechanism like ImageEditor for reliability
+
+**Frontend UI Styling (Scenario Mode):**
+- Issue: Feature buttons appearing white/invisible on dark background
+- Root Cause: CSS conflicts between `bg-gray-50` and dark theme
+- **Solution**: Updated compact feature buttons to use `bg-white/10` with proper contrast
+- **Fixed**: All scenario buttons now have proper visibility and hover effects
+
 **PostgreSQL Type Consistency:**
 - Issue: `inconsistent types deduced for parameter` errors in job status updates
 - Solution: Migration 004 ensures proper VARCHAR/TEXT type handling
@@ -343,12 +402,18 @@ Each refinement operation updates session context, allowing AI to maintain consi
 - Solution: Ensure proper UUID format in database queries
 - Prevention: Validate UUIDs before database operations
 
+**Data Type Compatibility:**
+- Issue: VariantGallery expects both `thumb_path` and `image_url` fields
+- **Solution**: Enhanced VariantModel.findByJobId to JOIN with images table and provide image_url
+- **Result**: Unified data structure supporting both legacy and new display patterns
+
 **Development Workflow:**
 1. Run `pnpm run install:all` after git pull
 2. Check `.env` file exists and has required variables
 3. Start backend first: `pnpm run dev:backend`
 4. Start frontend: `pnpm run dev:frontend`
-5. Access application at http://localhost:3000
+5. Access application at http://localhost:3001 (frontend) with backend at http://localhost:3005
+6. **Recommended**: Use Scenario Mode for best user experience and testing
 
 ### Production Readiness
 

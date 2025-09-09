@@ -14,7 +14,21 @@ const VariantGallery: React.FC = () => {
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadingVariant, setDownloadingVariant] = useState<Variant | null>(null);
 
+  // 添加调试信息
+  console.log('🎨 VariantGallery渲染:', {
+    variantCount: variants.length,
+    variants: variants.map((v, idx) => ({
+      index: idx + 1,
+      id: v.id?.slice(-8),
+      score: v.score,
+      hasImageUrl: !!v.image_url,
+      imageUrl: v.image_url?.slice(0, 50) + '...',
+      finalImageSrc: v.image_url || '/static/placeholder.jpg'
+    }))
+  });
+
   if (variants.length === 0) {
+    console.log('⚠️ VariantGallery: variants数组为空，不渲染组件');
     return null;
   }
 
@@ -149,7 +163,7 @@ const VariantGallery: React.FC = () => {
                   </div>
                 ) : (
                   <img
-                    src={variant.thumb_path ? `/static${variant.thumb_path}` : '/static/placeholder.jpg'}
+                    src={variant.image_url || '/static/placeholder.jpg'}
                     alt={`Variant ${index + 1}`}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     onError={() => handleImageError(variant.id)}

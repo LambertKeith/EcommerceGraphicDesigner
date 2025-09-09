@@ -185,7 +185,7 @@ const ScenarioSelector: React.FC<ScenarioSelectorProps> = ({
 
           {/* 推荐功能 */}
           <div className="mb-6">
-            <h3 className="font-medium text-gray-900 mb-3 flex items-center">
+            <h3 className="font-medium text-white mb-3 flex items-center">
               <span className="w-2 h-2 bg-yellow-400 rounded-full mr-2"></span>
               推荐功能
             </h3>
@@ -206,7 +206,7 @@ const ScenarioSelector: React.FC<ScenarioSelectorProps> = ({
 
           {/* 所有功能 */}
           <div>
-            <h3 className="font-medium text-gray-900 mb-3 flex items-center">
+            <h3 className="font-medium text-white mb-3 flex items-center">
               <span className="w-2 h-2 bg-gray-400 rounded-full mr-2"></span>
               所有功能
             </h3>
@@ -243,7 +243,7 @@ const FeatureCard: React.FC<{
   if (compact) {
     return (
       <motion.div
-        className="bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+        className="bg-white/10 backdrop-blur-md border border-white/20 rounded-lg p-3 cursor-pointer hover:bg-white/20 hover:border-white/30 transition-all"
         onClick={handleClick}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
@@ -254,10 +254,10 @@ const FeatureCard: React.FC<{
             {feature.name}
           </span>
           {feature.processing_options.dual_image && (
-            <span className="ml-auto text-xs text-blue-600">双图</span>
+            <span className="ml-auto text-xs text-blue-400 bg-blue-400/20 px-2 py-1 rounded">双图</span>
           )}
           {feature.processing_options.mask_required && (
-            <span className="ml-auto text-xs text-orange-600">需蒙版</span>
+            <span className="ml-auto text-xs text-orange-400 bg-orange-400/20 px-2 py-1 rounded">需蒙版</span>
           )}
         </div>
       </motion.div>

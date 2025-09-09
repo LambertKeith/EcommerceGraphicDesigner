@@ -72,7 +72,8 @@ export interface Variant {
   job_id: string;
   image_id: string;
   score: number;
-  thumb_path: string;
+  thumb_path?: string;
+  image_url?: string;
   meta_json: Record<string, any>;
 }
 
